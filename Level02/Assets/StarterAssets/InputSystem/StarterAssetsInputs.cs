@@ -12,6 +12,7 @@ namespace StarterAssets
 		public Vector2 look;
 		public bool jump;
 		public bool sprint;
+		public bool crouch;
 
 		[Header("Movement Settings")]
 		public bool analogMovement;
@@ -42,6 +43,12 @@ namespace StarterAssets
 		public void OnSprint(InputValue value)
 		{
 			SprintInput(value.isPressed);
+		}
+		public void OnCrouch(InputValue value)
+		{
+			// Toggle on every call (works reliably with Send Messages)
+			crouch = !crouch;
+			Debug.Log("Crouch toggled: " + crouch);
 		}
 #endif
 

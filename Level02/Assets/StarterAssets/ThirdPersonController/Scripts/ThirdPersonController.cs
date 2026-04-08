@@ -18,6 +18,18 @@ namespace StarterAssets
         [Tooltip("Move speed of the character in m/s")]
         public float MoveSpeed = 2.0f;
 
+       [Header("Crouch")]
+        public float CrouchSpeed = 1.2f;
+        public float CrouchHeight = 1.1f;
+        public Vector3 CrouchCenter = new Vector3(0f, 0.55f, 0f);
+        public float CrouchTransitionSpeed = 8f;
+        public float CrouchCameraTargetY = 1.0f;
+
+        private bool _isCrouching;
+        private float _standingHeight;
+        private Vector3 _standingCenter;
+        private Vector3 _standingCameraTargetLocalPos;
+
         [Tooltip("Sprint speed of the character in m/s")]
         public float SprintSpeed = 5.335f;
 
@@ -141,6 +153,9 @@ namespace StarterAssets
 
             _hasAnimator = TryGetComponent(out _animator);
             _controller = GetComponent<CharacterController>();
+            _standingHeight = _controller.height;
+            _standingCenter = _controller.center;
+            _standingCameraTargetLocalPos = CinemachineCameraTarget.transform.localPosition;
             _input = GetComponent<StarterAssetsInputs>();
 #if ENABLE_INPUT_SYSTEM 
             _playerInput = GetComponent<PlayerInput>();
@@ -155,14 +170,14 @@ namespace StarterAssets
             _fallTimeoutDelta = FallTimeout;
         }
 
-        private void Update()
-        {
-            _hasAnimator = TryGetComponent(out _animator);
-
-            JumpAndGravity();
-            GroundedCheck();
-            Move();
-        }
+       private void Update()
+       {
+        _hasAnimator = TryGetComponent(out _animator);
+        GroundedCheck();
+        JumpAndGravity();
+        HandleCrouch();
+        Move();
+       }   
 
         private void LateUpdate()
         {
@@ -217,8 +232,12 @@ namespace StarterAssets
         private void Move()
         {
             // set target speed based on move speed, sprint speed and if sprint is pressed
-            float targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
+          float targetSpeed;
 
+            if (_isCrouching)
+                targetSpeed = CrouchSpeed;
+            else
+                targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
             // a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
             // note: Vector2's == operator uses approximation so is not floating point error prone, and is cheaper than magnitude
@@ -280,6 +299,27 @@ namespace StarterAssets
                 _animator.SetFloat(_animIDSpeed, _animationBlend);
                 _animator.SetFloat(_animIDMotionSpeed, inputMagnitude);
             }
+        }
+
+       private void HandleCrouch()
+        {
+            _isCrouching = _input.crouch;
+
+            float targetHeight = _isCrouching ? CrouchHeight : _standingHeight;
+            Vector3 targetCenter = _isCrouching ? CrouchCenter : _standingCenter;
+
+            _controller.height = Mathf.Lerp(_controller.height, targetHeight, Time.deltaTime * CrouchTransitionSpeed);
+            _controller.center = Vector3.Lerp(_controller.center, targetCenter, Time.deltaTime * CrouchTransitionSpeed);
+
+            Vector3 targetCameraPos = _isCrouching
+                ? new Vector3(_standingCameraTargetLocalPos.x, CrouchCameraTargetY, _standingCameraTargetLocalPos.z)
+                : _standingCameraTargetLocalPos;
+
+            CinemachineCameraTarget.transform.localPosition = Vector3.Lerp(
+                CinemachineCameraTarget.transform.localPosition,
+                targetCameraPos,
+                Time.deltaTime * CrouchTransitionSpeed
+            );
         }
 
         private void JumpAndGravity()
