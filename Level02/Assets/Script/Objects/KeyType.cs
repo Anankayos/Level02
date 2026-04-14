@@ -1,0 +1,1 @@
+public enum KeyType { KeyA, KeyB, KeyC }

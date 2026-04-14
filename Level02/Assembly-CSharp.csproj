@@ -49,23 +49,54 @@
     <Analyzer Include="C:\Program Files\Unity\Hub\Editor\6000.3.6f1\Editor\Data\Tools\BuildPipeline\Unity.SourceGenerators\Unity.UIToolkit.SourceGenerator.dll" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\Commenteds\CommentedCameraController.cs" />
+    <Compile Include="Assets\Script\Objects\IntelData.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\VirtualInputs\UIVirtualTouchZone.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\VirtualInputs\UIVirtualJoystick.cs" />
+    <Compile Include="Assets\Script\Checkpoint\CheckpointManager.cs" />
+    <Compile Include="Assets\Script\Player\KeyPickup.cs" />
+    <Compile Include="Assets\Script\Objects\NoiseEmitter.cs" />
+    <Compile Include="Assets\Script\Objects\IDamageable.cs" />
+    <Compile Include="Assets\Script\Enemy\PatrolZone.cs" />
+    <Compile Include="Assets\Script\Objects\Door.cs" />
+    <Compile Include="Assets\Script\Player\PlayerNoiseEmitter.cs" />
+    <Compile Include="Assets\Script\Player\ATMCardPickup.cs" />
+    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\ThirdPersonController.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\Utilities\MobileDisableAutoSwitchControls.cs" />
+    <Compile Include="Assets\Script\Objects\KeyType.cs" />
+    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\Commenteds\CommentedThirdPersonController.cs" />
+    <Compile Include="Assets\Script\Enemy\EnemyAI.cs" />
     <Compile Include="Assets\StarterAssets\ThirdPersonController\Scripts\ThirdPersonController.cs" />
+    <Compile Include="Assets\Script\Player\PlayerShoot.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\VirtualInputs\UIVirtualButton.cs" />
     <Compile Include="Assets\TutorialInfo\Scripts\Readme.cs" />
+    <Compile Include="Assets\Script\Enemy\EnemyFootstepHandler.cs" />
+    <Compile Include="Assets\Script\Player\MedikitPickup.cs" />
+    <Compile Include="Assets\Script\Checkpoint\CheckpointData.cs" />
+    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\CameraController.cs" />
+    <Compile Include="Assets\Script\Player\PlayerInventory.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\CanvasInputs\UICanvasControllerInput.cs" />
+    <Compile Include="Assets\Script\Player\IntelFilePickup.cs" />
+    <Compile Include="Assets\Script\Checkpoint\Checkpoint.cs" />
+    <Compile Include="Assets\Script\Player\WeaponPickup.cs" />
+    <Compile Include="Assets\Script\Checkpoint\SceneStateTracker.cs" />
+    <Compile Include="Assets\Script\Objects\IResettable.cs" />
+    <Compile Include="Assets\Script\Objects\DestructibleSurface.cs" />
     <Compile Include="Assets\StarterAssets\ThirdPersonController\Scripts\BasicRigidBodyPush.cs" />
     <Compile Include="Assets\StarterAssets\InputSystem\StarterAssetsInputs.cs" />
+    <Compile Include="Assets\Script\Player\PlayerHealth.cs" />
+    <Compile Include="Assets\Script\Objects\FloatingPickup.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\TextMesh Pro\Shaders\TMPro.cginc" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile Overlay.shader" />
+    <None Include="Assets\AssetHunts!\GameDev Essential Kit - Mannequin\Hello Fellow Dev!.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile-2-Pass.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_Bitmap.shader" />
+    <None Include="Assets\EasyStart Third Person Controller\Prefabs\Source\Models\credits.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Mobile.cginc" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF SSD.shader" />
+    <None Include="Assets\AssetHunts!\GameDev Essential Kit - Mannequin\Pink Issue!.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Surface-Mobile.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\SDFFunctions.hlsl" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Surface.shader" />
