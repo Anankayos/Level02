@@ -3,13 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
+
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(Collider))]
 public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 {
     private enum State { Patrol, Suspicious, Search, Combat, Melee, Dead }
 
+
     // ═══ Inspector ═══════════════════════════════════════════════
+
 
     [Header("Vision")]
     [SerializeField] private float      visionRange      = 15f;
@@ -19,11 +22,14 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     [SerializeField] private float      peripheralRange  = 3f;
     [SerializeField] private LayerMask  obstacleLayer;
 
+
     [Header("Hearing")]
     [SerializeField] private float hearingRange = 10f;
 
+
     [Header("Health")]
     [SerializeField] private float maxHealth = 100f;
+
 
     [Header("Combat")]
     [SerializeField] private float     shootingRange = 18f;
@@ -34,24 +40,38 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     [SerializeField] private float     meleeCooldown = 1.6f;
     [SerializeField] private Transform weaponMuzzle;
 
+    // ── PATCH: physical bullet prefab ────────────────────────────
+    [Tooltip("Assign the BulletPrefab (Bullet.cs). If left empty, falls back to hitscan.")]
+    [SerializeField] private GameObject bulletPrefab;
+
+    // Inaccuracy: 0 = wild spray (±25°), 1 = pinpoint. Mirrors EnemyShooter.
+    [SerializeField, Range(0f, 1f)] private float accuracy = 0.60f;
+    // ─────────────────────────────────────────────────────────────
+
+
     [Header("Patrol")]
     [SerializeField] private Transform[] waypoints;
     [SerializeField] private float       waypointWait = 2f;
     [SerializeField] private float       patrolSpeed  = 2f;
     [SerializeField] private float       chaseSpeed   = 5f;
 
+
     [Header("Suspicion")]
     [SerializeField] private float suspicionRate      = 35f;
     [SerializeField] private float suspicionDecay     = 12f;
     [SerializeField] private float suspicionThreshold = 100f;
 
+
     [Header("Search")]
     [SerializeField] private float searchDuration = 10f;
+
 
     [Header("Zone (optional)")]
     [SerializeField] private PatrolZone patrolZone;
 
+
     // ═══ Runtime ════════════════════════════════════════════════
+
 
     private NavMeshAgent _agent;
     private Animator     _anim;
@@ -59,44 +79,57 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     private State        _state;
     private bool         _ready;
 
+
     // Health
     private float _hp;
+
 
     // Last known player position
     private Vector3 _lkp;
     private bool    _hasLKP;
 
+
     // Patrol
     private int   _wpIndex;
     private float _wpTimer;
     private bool  _wpWaiting;
-    private bool  _wpReady;      // defers first SetDestination to Tick
+    private bool  _wpReady;
+
 
     // Suspicious
     private float _suspicion;
     private float _suspLookTimer;
     private bool  _suspMoving;
 
+
     // Search
     private float _searchTimer;
 
+
     // Combat
+    private bool isInCombat;
+    public  bool IsInCombat => isInCombat;
     private float        _nextShot;
     private float        _lostSight;
     private const float  LostSightTimeout = 3f;
 
+
     // Melee
     private float _nextMelee;
+
 
     // IResettable
     private string     _id;
     private Vector3    _initPos;
     private Quaternion _initRot;
 
+
     public string ResettableID =>
         string.IsNullOrEmpty(_id) ? (_id = System.Guid.NewGuid().ToString()) : _id;
 
+
     // ═══ Unity Messages ══════════════════════════════════════════
+
 
     private void Awake()
     {
@@ -107,21 +140,19 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _initPos = transform.position;
         _initRot = transform.rotation;
 
-        // Disable BEFORE Start so Unity never auto-places at a bad position
         _agent.enabled = false;
 
         NoiseEmitter.OnNoiseEmitted += OnNoiseHeard;
     }
 
+
     private IEnumerator Start()
     {
-        // Move transform to closest NavMesh point while agent is still disabled
         if (NavMesh.SamplePosition(transform.position, out NavMeshHit hit, 10f, NavMesh.AllAreas))
             transform.position = hit.position;
 
         yield return new WaitForEndOfFrame();
 
-        // Enable — Unity now auto-places agent at transform.position
         _agent.enabled = true;
 
         yield return new WaitForEndOfFrame();
@@ -136,6 +167,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _ready = true;
         SetState(State.Patrol);
     }
+
 
     private void Update()
     {
@@ -154,7 +186,9 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
+
     // ═══ State Machine ═══════════════════════════════════════════
+
 
     private void SetState(State next)
     {
@@ -163,6 +197,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         EnterState(_state);
     }
 
+
     private void EnterState(State s)
     {
         switch (s)
@@ -170,8 +205,9 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
             case State.Patrol:
                 _agent.speed = patrolSpeed;
                 _wpWaiting   = false;
-                _wpReady     = false;   // first destination set in Tick
+                _wpReady     = false;
                 break;
+
 
             case State.Suspicious:
                 _agent.speed   = patrolSpeed * 0.75f;
@@ -182,6 +218,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 Debug.Log($"[{name}] ? Suspicious");
                 break;
 
+
             case State.Search:
                 _agent.speed = chaseSpeed * 0.7f;
                 _searchTimer = searchDuration;
@@ -191,7 +228,11 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 Debug.Log($"[{name}] !! Searching");
                 break;
 
+
             case State.Combat:
+                // ── PATCH: set isInCombat flag ─────────────────
+                isInCombat   = true;
+                // ───────────────────────────────────────────────
                 _agent.speed = chaseSpeed;
                 _lostSight   = 0f;
                 _nextShot    = Time.time + 0.6f;
@@ -199,14 +240,22 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 Debug.Log($"[{name}] !!! Combat");
                 break;
 
+
             case State.Melee:
+                // ── PATCH: still in combat during melee ────────
+                isInCombat   = true;
+                // ───────────────────────────────────────────────
                 _agent.speed = chaseSpeed;
                 _nextMelee   = Time.time + 0.4f;
                 _anim?.SetBool("IsMelee", true);
                 Debug.Log($"[{name}] Melee");
                 break;
 
+
             case State.Dead:
+                // ── PATCH: clear combat on death ───────────────
+                isInCombat = false;
+                // ───────────────────────────────────────────────
                 _agent.ResetPath();
                 _agent.enabled                   = false;
                 GetComponent<Collider>().enabled = false;
@@ -218,6 +267,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
+
     private void ExitState(State s)
     {
         switch (s)
@@ -226,18 +276,28 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 _anim?.SetBool("IsAlert",  false);
                 _anim?.SetBool("IsMoving", false);
                 break;
+
             case State.Search:
                 _anim?.SetBool("IsAlert",     false);
                 _anim?.SetBool("IsSearching", false);
                 break;
+
             case State.Combat:
+                // ── PATCH: clear isInCombat on exit ───────────
+                isInCombat = false;
+                // ──────────────────────────────────────────────
                 _agent.ResetPath();
                 _anim?.SetBool("IsInCombat", false);
                 _anim?.SetBool("IsMoving",   false);
                 break;
+
             case State.Melee:
+                // ── PATCH: clear isInCombat on exit ───────────
+                isInCombat = false;
+                // ──────────────────────────────────────────────
                 _anim?.SetBool("IsMelee", false);
                 break;
+
             case State.Dead:
                 _agent.enabled                   = true;
                 GetComponent<Collider>().enabled = true;
@@ -246,11 +306,12 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
+
     // ═══ State Ticks ═════════════════════════════════════════════
+
 
     private void TickPatrol()
     {
-        // Defer first waypoint to Tick so agent is confirmed ready
         if (!_wpReady) { _wpReady = true; MoveToWaypoint(); return; }
 
         if (CanSeePlayer()) { StampLKP(); SetState(State.Combat); return; }
@@ -276,6 +337,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
+
     private void TickSuspicious()
     {
         if (CanSeePlayer()) { StampLKP(); SetState(State.Combat); return; }
@@ -297,6 +359,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
+
     private void TickSearch()
     {
         if (CanSeePlayer()) { StampLKP(); SetState(State.Combat); return; }
@@ -305,9 +368,9 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         if (_searchTimer <= 0f) { _hasLKP = false; _suspicion = 0f; SetState(State.Patrol); }
     }
 
+
     private void TickCombat()
     {
-        // Player outside zone → lose track quickly
         if (!PlayerInZone())
         {
             _lostSight += Time.deltaTime;
@@ -325,7 +388,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
             float dist = Dist(_player.transform.position);
             if (dist <= meleeRange) { SetState(State.Melee); return; }
 
-            // Maintain engagement distance
             if      (dist > shootingRange * 0.75f) Move(_lkp);
             else if (dist < shootingRange * 0.4f)  Move(transform.position +
                          (transform.position - _player.transform.position).normalized * 4f);
@@ -344,6 +406,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
         _anim?.SetBool("IsMoving", _agent.velocity.magnitude > 0.2f);
     }
+
 
     private void TickMelee()
     {
@@ -368,7 +431,9 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
+
     // ═══ Vision ══════════════════════════════════════════════════
+
 
     private bool CanSeePlayer()
     {
@@ -387,6 +452,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         return LineOfSight(_player.transform.position);
     }
 
+
     private bool LineOfSight(Vector3 target)
     {
         Vector3 eye = transform.position + Vector3.up * 1.6f;
@@ -394,13 +460,13 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         return !Physics.Raycast(eye, dir.normalized, out _, dir.magnitude, obstacleLayer);
     }
 
+
     // ═══ Hearing ════════════════════════════════════════════════
+
 
     private void OnNoiseHeard(Vector3 pos, float radius, NoiseType type, GameObject source)
     {
-        // Ignore own footsteps and any noise this enemy generated itself
         if (source == gameObject) return;
-
         if (_state == State.Dead || !_ready) return;
 
         float range = hearingRange + radius;
@@ -422,10 +488,13 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
+
     // ═══ IDamageable ═════════════════════════════════════════════
+
 
     public bool IsAlive => _hp > 0f;
 
+    // ── PATCH: signature now matches IDamageable (source is optional) ──
     public void TakeDamage(float amount, GameObject source = null)
     {
         if (!IsAlive) return;
@@ -438,9 +507,12 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         else if (_state is not (State.Combat or State.Melee))   SetState(State.Combat);
     }
 
+
     // ═══ IResettable ═════════════════════════════════════════════
 
+
     public void SaveInitialState() { }
+
 
     public void ResetState()
     {
@@ -448,11 +520,15 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _suspicion = 0f;
         _hasLKP    = false;
         _ready     = false;
+        // ── PATCH: reset combat flag on full reset ─────────────
+        isInCombat = false;
+        // ───────────────────────────────────────────────────────
 
         gameObject.SetActive(true);
         GetComponent<Collider>().enabled = true;
         StartCoroutine(ResetCoroutine());
     }
+
 
     private IEnumerator ResetCoroutine()
     {
@@ -464,13 +540,16 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         if (_agent.isOnNavMesh) { _ready = true; SetState(State.Patrol); }
     }
 
+
     public void ForceKill()
     {
         _hp = 0f;
         if (_state != State.Dead) SetState(State.Dead);
     }
 
+
     // ═══ Utilities ═══════════════════════════════════════════════
+
 
     private void MoveToWaypoint()
     {
@@ -478,6 +557,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         Move(waypoints[_wpIndex].position);
         _anim?.SetBool("IsMoving", true);
     }
+
 
     private void Move(Vector3 dest)
     {
@@ -489,6 +569,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _agent.SetDestination(dest);
     }
 
+
     private void FaceTarget(Vector3 target)
     {
         Vector3 dir = (target - transform.position).normalized;
@@ -499,6 +580,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         );
     }
 
+
     private void StampLKP()
     {
         if (_player == null) return;
@@ -506,19 +588,61 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _hasLKP = true;
     }
 
+
     private bool PlayerInZone()
     {
         if (patrolZone == null || _player == null) return true;
         return patrolZone.Contains(_player.transform.position);
     }
 
+
     private float Dist(Vector3 p) => Vector3.Distance(transform.position, p);
 
+
+    // ═══ Shooting ════════════════════════════════════════════════
+
+    // ── PATCH: replaced hitscan with physical Bullet spawn ────────
+    // If bulletPrefab is not assigned in the Inspector, falls back
+    // to the original hitscan raycast so the enemy still functions.
     private void Shoot()
     {
         if (weaponMuzzle == null || _player == null) return;
         _anim?.SetTrigger("Shoot");
 
+        if (bulletPrefab != null)
+            ShootBullet();
+        else
+            ShootHitscan();   // fallback — remove once bulletPrefab is assigned
+
+        // Notify nearby enemies (existing hearing system)
+        NoiseEmitter.EmitNoise(weaponMuzzle.position, 35f, NoiseType.Gunshot, gameObject);
+    }
+
+    /// <summary>Physical bullet — spawns Bullet.cs prefab from weaponMuzzle.</summary>
+    private void ShootBullet()
+    {
+        Vector3 target = _player.transform.position + Vector3.up * 0.9f;
+        Vector3 dir    = (target - weaponMuzzle.position).normalized;
+
+        // Apply inaccuracy spread: accuracy=0.6 → ±10°
+        float maxAngle = Mathf.Lerp(25f, 0f, accuracy);
+        dir = (Quaternion.Euler(
+            Random.Range(-maxAngle, maxAngle),
+            Random.Range(-maxAngle, maxAngle),
+            0f) * dir).normalized;
+
+        GameObject b = Instantiate(bulletPrefab, weaponMuzzle.position, Quaternion.LookRotation(dir));
+        Bullet bullet = b.GetComponent<Bullet>();
+        if (bullet != null)
+        {
+            bullet.baseDamage = shootDamage;   // sync damage from Inspector field
+            bullet.Initialize(dir, fromEnemy: true, owner: gameObject);
+        }
+    }
+
+    /// <summary>Hitscan fallback — used when no bulletPrefab is assigned.</summary>
+    private void ShootHitscan()
+    {
         Vector3 dir = (_player.transform.position + Vector3.up * 0.9f) - weaponMuzzle.position;
         dir += new Vector3(Random.Range(-0.08f, 0.08f),
                            Random.Range(-0.05f, 0.05f),
@@ -526,18 +650,49 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
         if (Physics.Raycast(weaponMuzzle.position, dir.normalized,
                             out RaycastHit hit, shootingRange * 1.5f))
-            hit.collider.GetComponent<IDamageable>()?.TakeDamage(shootDamage, gameObject);
+            hit.collider.GetComponentInParent<IDamageable>()?.TakeDamage(shootDamage, gameObject);
     }
+    // ─────────────────────────────────────────────────────────────
+
+
+    // ═══ Melee ═══════════════════════════════════════════════════
 
     private IEnumerator DelayedMeleeDamage()
     {
         yield return new WaitForSeconds(0.28f);
         if (_player == null) yield break;
         if (Dist(_player.transform.position) <= meleeRange + 0.4f)
-            _player.GetComponent<IDamageable>()?.TakeDamage(meleeDamage, gameObject);
+        {
+            // ── PATCH: route through PlayerHealth directly ─────
+            // IDamageable on the player may have a different TakeDamage
+            // signature. PlayerHealth is checked first, then IDamageable
+            // as a fallback to support any other damageable in melee range.
+            PlayerHealth ph = _player.GetComponent<PlayerHealth>();
+            if (ph != null)
+                ph.TakeDamage(meleeDamage);
+            else
+                _player.GetComponentInParent<IDamageable>()?.TakeDamage(meleeDamage, gameObject);
+            // ──────────────────────────────────────────────────
+        }
     }
 
+    // Animation Event: add "AnimEvent_MeleeDamage" on the MeleeAttack clip
+    // at the exact hit frame as an alternative to the coroutine above.
+    public void AnimEvent_MeleeDamage()
+    {
+        if (_player == null) return;
+        if (Dist(_player.transform.position) > meleeRange + 0.4f) return;
+
+        PlayerHealth ph = _player.GetComponent<PlayerHealth>();
+        if (ph != null)
+            ph.TakeDamage(meleeDamage);
+        else
+            _player.GetComponentInParent<IDamageable>()?.TakeDamage(meleeDamage, gameObject);
+    }
+
+
     // ═══ Gizmos ══════════════════════════════════════════════════
+
 
     private void OnDrawGizmosSelected()
     {
@@ -558,6 +713,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, meleeRange);
     }
+
 
     private void OnDestroy() => NoiseEmitter.OnNoiseEmitted -= OnNoiseHeard;
 }

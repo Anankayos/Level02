@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 8345398180207733460}
   - component: {fileID: 7013632804023295571}
   - component: {fileID: -6427148361774519800}
+  - component: {fileID: 3035194463670468411}
   m_Layer: 0
   m_Name: ATMCard
   m_TagString: Untagged
@@ -148,3 +149,15 @@ MonoBehaviour:
   rotationSpeed: 60
   phaseOffset: 0
   playerTag: Player
+--- !u!114 &3035194463670468411
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2975411674155671869}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b30a37450f85d2f45a4a4c8fa0eb5feb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PersistentPickup

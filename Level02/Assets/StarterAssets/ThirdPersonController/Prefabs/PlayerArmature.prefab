@@ -541,6 +541,37 @@ Transform:
   - {fileID: 1321086290467262078}
   m_Father: {fileID: 117881535543302510}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2985340454962499861
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 560374325472419796}
+  m_Layer: 0
+  m_Name: MuzzlePointPlayer
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &560374325472419796
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2985340454962499861}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0, y: -0.093, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 8626512282341172403}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &3036295890290752353
 GameObject:
   m_ObjectHideFlags: 0
@@ -1122,6 +1153,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   MoveSpeed: 2
+  CrouchSpeed: 1.2
+  CrouchHeight: 1.1
+  CrouchCenter: {x: 0, y: 0.55, z: 0}
+  CrouchTransitionSpeed: 8
+  CrouchCameraTargetY: 1
   SprintSpeed: 5.335
   RotationSmoothTime: 0.12
   SpeedChangeRate: 10
@@ -1189,6 +1225,7 @@ MonoBehaviour:
   look: {x: 0, y: 0}
   jump: 0
   sprint: 0
+  crouch: 0
   analogMovement: 0
   cursorLocked: 1
   cursorInputForLook: 1
@@ -1482,6 +1519,7 @@ Transform:
   - {fileID: 3964097221717966225}
   - {fileID: 4372607808223944788}
   - {fileID: 117881535543302510}
+  - {fileID: 560374325472419796}
   m_Father: {fileID: 8322255484584408707}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &5653482252439368515

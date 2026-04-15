@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 1738292129474490103}
   - component: {fileID: 7344622748392394190}
   - component: {fileID: -9141818367269210316}
+  - component: {fileID: 8714766203307509197}
   m_Layer: 0
   m_Name: IntelFile
   m_TagString: Untagged
@@ -134,3 +135,15 @@ MonoBehaviour:
     title: 
     content: 
     thumbnail: {fileID: 0}
+--- !u!114 &8714766203307509197
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9112201278912385193}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b30a37450f85d2f45a4a4c8fa0eb5feb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PersistentPickup

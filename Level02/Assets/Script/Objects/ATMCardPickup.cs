@@ -1,16 +1,18 @@
 using UnityEngine;
 
-public class KeyPickup : FloatingPickup
+public class ATMCardPickup : FloatingPickup
 {
-    [Header("Key Type")]
-    [SerializeField] private KeyType keyType = KeyType.KeyA;
-
+    
     protected override void OnPickedUp(GameObject player)
     {
+        
         var inv = player.GetComponent<PlayerInventory>();
         if (inv == null) return;
 
-        inv.CollectKey(keyType);
+        inv.CollectATMCard();
         DestroyPickup();
+
+        GetComponent<PersistentPickup>()?.Collect();
+        gameObject.SetActive(false);
     }
 }

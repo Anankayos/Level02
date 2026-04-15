@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// Singleton — tracks every destroyed/collected ID at runtime
 public class SceneStateTracker : MonoBehaviour
 {
     public static SceneStateTracker Instance { get; private set; }
@@ -14,8 +13,13 @@ public class SceneStateTracker : MonoBehaviour
         else { Destroy(gameObject); return; }
     }
 
-    public void RegisterDestroyed(string id)         => _destroyedIDs.Add(id);
-    public HashSet<string> GetDestroyedSnapshot()    => new HashSet<string>(_destroyedIDs);
+    public void RegisterDestroyed(string id)          => _destroyedIDs.Add(id);
+
+    // ── ADD THIS LINE ─────────────────────────────────────────
+    public IReadOnlyCollection<string> DestroyedIDs   => _destroyedIDs;
+    // ─────────────────────────────────────────────────────────
+
+    public HashSet<string> GetDestroyedSnapshot()     => new HashSet<string>(_destroyedIDs);
     public void RestoreSnapshot(HashSet<string> snap)
     {
         _destroyedIDs.Clear();

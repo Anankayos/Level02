@@ -12,5 +12,8 @@ public class IntelFilePickup : FloatingPickup
 
         inv.CollectIntel(intelData);
         DestroyPickup();
+
+        GetComponent<PersistentPickup>()?.Collect();
+        gameObject.SetActive(false);
     }
 }
