@@ -14,8 +14,8 @@ public class PlayerCombat : MonoBehaviour
     [Tooltip("Your existing Starter Assets follow camera")]
     public CinemachineCamera normalCam;
 
-    [Tooltip("OTS aim camera (duplicate of normal, tighter FOV + shoulder offset)")]
-    public CinemachineCamera aimCam;
+    // aimCam no longer needed — CameraAimController handles blending on one camera.
+    [HideInInspector] public CinemachineCamera aimCam;
 
     // ── Weapon ────────────────────────────────────────────────
     [Header("Weapon")]
@@ -97,7 +97,8 @@ public class PlayerCombat : MonoBehaviour
     private PlayerHealth health;
     private Animator     animator;
     private AudioSource  audioSource;
-    private float        defaultMoveSpeed = 5.335f;
+    private float        defaultMoveSpeed;    // cached once in Start from TPC
+    private float        defaultSprintSpeed;  // cached once in Start from TPC
 
     private bool _hasShootTrigger;   // cached at Start — avoids crash if trigger missing
 
@@ -111,15 +112,23 @@ public class PlayerCombat : MonoBehaviour
         audioSource = GetComponent<AudioSource>();
         mainCamera  = Camera.main;
 
+        // Cache speeds FIRST — before SetAimMode is called, so it never
+        // reads a zero-initialized value and sets TPC.MoveSpeed = 0.
+        var tpc = GetComponent<StarterAssets.ThirdPersonController>();
+        if (tpc != null)
+        {
+            defaultMoveSpeed   = tpc.MoveSpeed;
+            defaultSprintSpeed = tpc.SprintSpeed;
+        }
+
         SetAimMode(false, instant: true);
     }
 
     void Start()
     {
         // Cache whether the player animator has a Shoot trigger.
-        // If not, the trigger is silently skipped — add "Shoot" (Trigger)
-        // to the player's Animator Controller to play a shooting animation.
         _hasShootTrigger = HasAnimatorParam("Shoot", AnimatorControllerParameterType.Trigger);
+
         // Hide crosshairs until weapon is picked up
         if (hipCrosshair != null) hipCrosshair.SetActive(false);
         if (adsCrosshair  != null) adsCrosshair.SetActive(false);
@@ -155,24 +164,39 @@ public class PlayerCombat : MonoBehaviour
 
     void SetAimMode(bool aim, bool instant = false)
     {
-        // ── Swap Cinemachine camera priority ─────────────────
-        // Higher priority wins. We swap which cam is dominant.
-        if (normalCam != null)
-            normalCam.Priority = aim ? (normalCamPriority - 5) : normalCamPriority;
-        if (aimCam != null)
-            aimCam.Priority    = aim ? aimCamPriority : (aimCamPriority - 10);
+        // ── Delegate camera to CameraAimController ────────────
+        // SOTTR-style smooth blend handled there.
+        var camAim = GetComponent<CameraAimController>();
+        if (camAim != null)
+            camAim.SetAim(aim, instant);
+        else
+        {
+            // Fallback: priority swap (old system)
+            if (normalCam != null)
+                normalCam.Priority = aim ? (normalCamPriority - 5) : normalCamPriority;
+            if (aimCam != null)
+                aimCam.Priority    = aim ? aimCamPriority : (aimCamPriority - 10);
+        }
 
         SetCrosshair(aim);
 
-        // ── Slow player while aiming ─────────────────────────
-        // ThirdPersonController exposes MoveSpeed as a public field
+        // ── Speed control while aiming ───────────────────────
+        // Uses values cached in Start() — never reads back from TPC to avoid
+        // the "half of half" drift bug.
         var tpc = GetComponent<StarterAssets.ThirdPersonController>();
-        if (tpc != null)
+        if (tpc != null && defaultMoveSpeed > 0f)  // guard: never apply if speeds not cached yet
         {
-            if (!aim) defaultMoveSpeed = tpc.MoveSpeed; // cache before modifying
-            tpc.MoveSpeed = aim
-                ? defaultMoveSpeed * aimMoveSpeedMultiplier
-                : defaultMoveSpeed;
+            if (aim)
+            {
+                float aimSpeed     = defaultMoveSpeed * aimMoveSpeedMultiplier;
+                tpc.MoveSpeed      = aimSpeed;
+                tpc.SprintSpeed    = aimSpeed;
+            }
+            else
+            {
+                tpc.MoveSpeed      = defaultMoveSpeed;
+                tpc.SprintSpeed    = defaultSprintSpeed;
+            }
         }
 
         // ── SFX ──────────────────────────────────────────────
