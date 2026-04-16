@@ -29,6 +29,7 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
 
     public void TakeDamage(float amount, GameObject source = null)
     {
+        GameEvents.FireHit(HitType.Destructible);
         if (_isDestroyed) return;
         _health -= amount;
         NoiseEmitter.EmitNoise(transform.position, impactNoiseRadius, NoiseType.Impact);

@@ -1,20 +1,15 @@
 using UnityEngine;
 using Unity.Cinemachine;
 using UnityEngine.InputSystem;
-// ─────────────────────────────────────────────────────────────
 
 [RequireComponent(typeof(PlayerHealth))]
-public class PlayerCombat : MonoBehaviour
+public class PlayerCombat : MonoBehaviour, IResettable
 {
     // ── Cameras ───────────────────────────────────────────────
     [Header("Cinemachine Cameras")]
-
-    // v2: CinemachineVirtualCamera
-    // v3: swap to CinemachineCamera  (only these two lines change for v3)
     [Tooltip("Your existing Starter Assets follow camera")]
     public CinemachineCamera normalCam;
 
-    // aimCam no longer needed — CameraAimController handles blending on one camera.
     [HideInInspector] public CinemachineCamera aimCam;
 
     // ── Weapon ────────────────────────────────────────────────
@@ -62,14 +57,14 @@ public class PlayerCombat : MonoBehaviour
 
     // ── HUD ───────────────────────────────────────────────────
     [Header("HUD References")]
-    [Tooltip("Dot crosshair shown during hip-fire (active by default)")]
+    [Tooltip("Dot crosshair shown during hip-fire — leave None if using CrosshairController")]
     public GameObject hipCrosshair;
 
-    [Tooltip("Tighter crosshair shown while aiming")]
+    [Tooltip("Tighter crosshair shown while aiming — leave None if using CrosshairController")]
     public GameObject adsCrosshair;
 
-    [Tooltip("Brief X marker shown when a bullet connects with an IDamageable")]
-    public GameObject hitMarker;
+    [Tooltip("HitMarker GameObject with HitMarkerController.cs")]
+    public HitMarkerController hitMarker;
 
     // ── Audio ─────────────────────────────────────────────────
     [Header("Audio (optional)")]
@@ -77,43 +72,57 @@ public class PlayerCombat : MonoBehaviour
     public AudioClip aimInSFX;
     public AudioClip aimOutSFX;
 
-    // ── Runtime ───────────────────────────────────────────────
+    // ── Weapon State ──────────────────────────────────────────
     [Header("Weapon State")]
     [Tooltip("If true, player keeps the weapon after death/respawn.")]
     public bool keepWeaponOnRespawn = false;
 
+    // ── Ammo ──────────────────────────────────────────────────
     [Header("Ammo")]
     [Tooltip("Current rounds in the magazine. Loaded by WeaponPickup via AddAmmo().")]
     private int currentAmmo = 0;
 
-    public int  CurrentAmmo => currentAmmo;
+    public int CurrentAmmo => currentAmmo;
+    public int ReserveAmmo => 0;
 
-    private bool         hasWeapon;
+    // ── IResettable ───────────────────────────────────────────
+    public string ResettableID => gameObject.GetInstanceID().ToString();
+    public void SaveInitialState() { }
 
-    private bool         isAiming;
-    private float        nextFireTime;
-    private float        recoilY;
-    private Camera       mainCamera;
-    private PlayerHealth health;
-    private Animator     animator;
-    private AudioSource  audioSource;
-    private float        defaultMoveSpeed;    // cached once in Start from TPC
-    private float        defaultSprintSpeed;  // cached once in Start from TPC
+    // ── Private Runtime ───────────────────────────────────────
+    private bool        hasWeapon;
+    private bool        isAiming;
+    private float       nextFireTime;
+    private float       recoilY;
+    private float       _aimInputCooldown;
+    private bool        _hasShootTrigger;
 
-    private bool _hasShootTrigger;   // cached at Start — avoids crash if trigger missing
+    private Camera           mainCamera;
+    private PlayerHealth     health;
+    private Animator         animator;
+    private AudioSource      audioSource;
+    private float            defaultMoveSpeed;
+    private float            defaultSprintSpeed;
+    private CrosshairController _crosshair;
 
-    // ─────────────────────────────────────────────────────────
+    // ── Public Events ─────────────────────────────────────────
+    public event System.Action<int> OnAmmoChanged;
+    public bool IsAiming  => isAiming;
+    public bool HasWeapon => hasWeapon;
+
+
+    // ═════════════════════════════════════════════════════════
     // INIT
-    // ─────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════
+
     void Awake()
     {
         health      = GetComponent<PlayerHealth>();
         animator    = GetComponent<Animator>();
         audioSource = GetComponent<AudioSource>();
         mainCamera  = Camera.main;
+        _crosshair  = FindObjectOfType<CrosshairController>();
 
-        // Cache speeds FIRST — before SetAimMode is called, so it never
-        // reads a zero-initialized value and sets TPC.MoveSpeed = 0.
         var tpc = GetComponent<StarterAssets.ThirdPersonController>();
         if (tpc != null)
         {
@@ -126,36 +135,59 @@ public class PlayerCombat : MonoBehaviour
 
     void Start()
     {
-        // Cache whether the player animator has a Shoot trigger.
         _hasShootTrigger = HasAnimatorParam("Shoot", AnimatorControllerParameterType.Trigger);
 
-        // Hide crosshairs until weapon is picked up
         if (hipCrosshair != null) hipCrosshair.SetActive(false);
-        if (adsCrosshair  != null) adsCrosshair.SetActive(false);
+        if (adsCrosshair != null) adsCrosshair.SetActive(false);
+
+        StartCoroutine(BroadcastInitialState());
+    }
+
+    private void OnEnable()
+    {
+        // Reset aim flag — SetAimMode is called explicitly by ForceResetAim()
+        isAiming = false;
+    }
+
+    private System.Collections.IEnumerator BroadcastInitialState()
+    {
+        yield return null; // wait one frame so CrosshairController.Awake() runs first
+        if (hasWeapon)
+        {
+            GameEvents.FireWeaponEquipped("Rifle");
+            GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
+        }
     }
 
 
-    // ─────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════
     // UPDATE
-    // ─────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════
+
     void Update()
     {
         if (health.IsDead) return;
-
         HandleAimInput();
         HandleShootInput();
         RecoverRecoil();
     }
 
-    // ─────────────────────────────────────────────────────────
+
+    // ═════════════════════════════════════════════════════════
     // AIMING
-    // ─────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════
+
     void HandleAimInput()
     {
-        if (!hasWeapon) { if (isAiming) SetAimMode(false); return; }
-        // RMB = aim (hold) — New Input System
-        bool wantsAim = Mouse.current != null && Mouse.current.rightButton.isPressed;
+        if (_aimInputCooldown > 0f)
+        {
+            _aimInputCooldown -= Time.deltaTime;
+            return;
+        }
 
+        if (!hasWeapon) { if (isAiming) SetAimMode(false); return; }
+
+        bool wantsAim = Mouse.current != null && Mouse.current.rightButton.isPressed;
         if (wantsAim == isAiming) return;
 
         isAiming = wantsAim;
@@ -164,14 +196,13 @@ public class PlayerCombat : MonoBehaviour
 
     void SetAimMode(bool aim, bool instant = false)
     {
-        // ── Delegate camera to CameraAimController ────────────
-        // SOTTR-style smooth blend handled there.
         var camAim = GetComponent<CameraAimController>();
         if (camAim != null)
+        {
             camAim.SetAim(aim, instant);
+        }
         else
         {
-            // Fallback: priority swap (old system)
             if (normalCam != null)
                 normalCam.Priority = aim ? (normalCamPriority - 5) : normalCamPriority;
             if (aimCam != null)
@@ -180,26 +211,22 @@ public class PlayerCombat : MonoBehaviour
 
         SetCrosshair(aim);
 
-        // ── Speed control while aiming ───────────────────────
-        // Uses values cached in Start() — never reads back from TPC to avoid
-        // the "half of half" drift bug.
         var tpc = GetComponent<StarterAssets.ThirdPersonController>();
-        if (tpc != null && defaultMoveSpeed > 0f)  // guard: never apply if speeds not cached yet
+        if (tpc != null && defaultMoveSpeed > 0f)
         {
             if (aim)
             {
-                float aimSpeed     = defaultMoveSpeed * aimMoveSpeedMultiplier;
-                tpc.MoveSpeed      = aimSpeed;
-                tpc.SprintSpeed    = aimSpeed;
+                float aimSpeed  = defaultMoveSpeed * aimMoveSpeedMultiplier;
+                tpc.MoveSpeed   = aimSpeed;
+                tpc.SprintSpeed = aimSpeed;
             }
             else
             {
-                tpc.MoveSpeed      = defaultMoveSpeed;
-                tpc.SprintSpeed    = defaultSprintSpeed;
+                tpc.MoveSpeed   = defaultMoveSpeed;
+                tpc.SprintSpeed = defaultSprintSpeed;
             }
         }
 
-        // ── SFX ──────────────────────────────────────────────
         if (!instant && audioSource != null)
         {
             AudioClip clip = aim ? aimInSFX : aimOutSFX;
@@ -213,17 +240,18 @@ public class PlayerCombat : MonoBehaviour
         if (adsCrosshair != null) adsCrosshair.SetActive(aiming);
     }
 
-    // ─────────────────────────────────────────────────────────
+
+    // ═════════════════════════════════════════════════════════
     // SHOOTING
-    // ─────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════
+
     void HandleShootInput()
     {
-        if (!hasWeapon) return;
-        if (currentAmmo <= 0) return;  // no rounds — block fire
-        // LMB = shoot (hold = auto, Down = semi-auto) — New Input System
-        bool wantsShoot = Mouse.current != null && Mouse.current.leftButton.isPressed;
+        if (!hasWeapon)       return;
+        if (currentAmmo <= 0) return;
 
-        if (!wantsShoot) return;
+        bool wantsShoot = Mouse.current != null && Mouse.current.leftButton.isPressed;
+        if (!wantsShoot)             return;
         if (Time.time < nextFireTime) return;
 
         Fire();
@@ -231,74 +259,143 @@ public class PlayerCombat : MonoBehaviour
 
     void Fire()
     {
-        if (currentAmmo <= 0) return;  // double-guard
+        if (currentAmmo <= 0) return;
         currentAmmo--;
-        OnAmmoChanged?.Invoke(currentAmmo);  // notify HUD
         nextFireTime = Time.time + fireRate;
 
-        // ── Uncharted mechanic: aim ray from SCREEN CENTER ────
-        // This gives a world target point. The bullet physically travels
-        // from the muzzle TOWARD that point (not from the camera).
+        OnAmmoChanged?.Invoke(currentAmmo);
+        GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
+
         Ray screenRay = mainCamera.ScreenPointToRay(
             new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
 
-        Vector3 aimWorldTarget;
         bool hitSomething = Physics.Raycast(screenRay, out RaycastHit aimHit, 300f, aimLayer);
+        Vector3 aimWorldTarget = hitSomething ? aimHit.point : screenRay.GetPoint(200f);
 
-        aimWorldTarget = hitSomething ? aimHit.point : screenRay.GetPoint(200f);
+        
 
-        // Hit marker when crosshair is over an IDamageable
-        if (hitSomething && aimHit.collider != null)
-        {
-            IDamageable dmg = aimHit.collider.GetComponentInParent<IDamageable>();
-            if (dmg != null && hitMarker != null)
-                StartCoroutine(ShowHitMarker());
-        }
-
-        // ── Direction from muzzle to aim target ──────────────
+        // ── Spawn bullet ──────────────────────────────────────
         if (muzzlePoint == null)
         {
-            Debug.LogWarning("[PlayerCombat] MuzzlePoint not assigned in Inspector.");
+            Debug.LogWarning("[PlayerCombat] MuzzlePoint not assigned.");
             return;
         }
 
         Vector3 dir = (aimWorldTarget - muzzlePoint.position).normalized;
+        dir = ApplySpread(dir, isAiming ? adsSpread : hipFireSpread);
 
-        // ── Apply spread + recoil ─────────────────────────────
-        float spread = isAiming ? adsSpread : hipFireSpread;
-        dir = ApplySpread(dir, spread);
-
-        // ── Spawn bullet ──────────────────────────────────────
         if (bulletPrefab != null)
         {
-            GameObject bulletGO = Instantiate(
-                bulletPrefab,
-                muzzlePoint.position,
-                Quaternion.LookRotation(dir));
+            GameObject bulletGO = Instantiate(bulletPrefab,
+                muzzlePoint.position, Quaternion.LookRotation(dir));
 
             Bullet bullet = bulletGO.GetComponent<Bullet>();
             if (bullet != null)
                 bullet.Initialize(dir, fromEnemy: false, owner: gameObject);
         }
 
-        // ── Recoil accumulate ─────────────────────────────────
         recoilY += recoilPerShot;
+        _crosshair?.OnShot();
 
-        // ── Animator (only fires if 'Shoot' trigger exists in controller) ──
         if (animator != null && _hasShootTrigger)
             animator.SetTrigger("Shoot");
 
-        // ── Audio ─────────────────────────────────────────────
         if (audioSource != null && shootSFX != null)
             audioSource.PlayOneShot(shootSFX);
 
-        // ── Noise (alerts nearby EnemyAI via your NoiseEmitter) ──
         NoiseEmitter.EmitNoise(transform.position, 30f, NoiseType.Gunshot, gameObject);
     }
 
-    // ─────────────────────────────────────────────────────────
+
+    // ═════════════════════════════════════════════════════════
+    // WEAPON EQUIP / UNEQUIP
+    // ═════════════════════════════════════════════════════════
+
+    public void EquipWeapon()
+    {
+        hasWeapon = true;
+        if (hipCrosshair != null) hipCrosshair.SetActive(true);
+        Debug.Log("[PlayerCombat] Weapon equipped.");
+
+        GameEvents.FireWeaponEquipped("Rifle");
+        GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
+    }
+
+    public void UnequipWeapon()
+    {
+        hasWeapon = false;
+        ClearAmmo();
+        SetAimMode(false);
+        SetCrosshair(false);
+        if (hipCrosshair != null) hipCrosshair.SetActive(false);
+        if (adsCrosshair != null) adsCrosshair.SetActive(false);
+
+        GameEvents.FireWeaponUnequipped();
+    }
+
+    public void AddAmmo(int amount)
+    {
+        currentAmmo += amount;
+        OnAmmoChanged?.Invoke(currentAmmo);
+        GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
+        Debug.Log($"[PlayerCombat] Ammo +{amount} → {currentAmmo} rounds");
+    }
+
+    public void ClearAmmo()
+    {
+        currentAmmo = 0;
+        OnAmmoChanged?.Invoke(0);
+        GameEvents.FireAmmoChanged(0, ReserveAmmo);
+    }
+
+    public void RestoreAmmo(int savedAmmo)
+    {
+        currentAmmo = savedAmmo;
+        OnAmmoChanged?.Invoke(currentAmmo);
+        GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
+    }
+
+
+    // ═════════════════════════════════════════════════════════
+    // IRESETTABLE
+    // ═════════════════════════════════════════════════════════
+
+    public void ResetState()
+    {
+        isAiming = false;
+        SetAimMode(false, instant: true);
+
+        if (!keepWeaponOnRespawn)
+        {
+            UnequipWeapon();
+            return;
+        }
+
+        GameEvents.FireWeaponEquipped("Rifle");
+        GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
+    }
+
+    public void ForceResetAim()
+    {
+        isAiming          = false;
+        _aimInputCooldown = 0.25f;
+        SetAimMode(false, instant: true);
+
+        var tpc = GetComponent<StarterAssets.ThirdPersonController>();
+        if (tpc != null && defaultMoveSpeed > 0f)
+        {
+            tpc.MoveSpeed   = defaultMoveSpeed;
+            tpc.SprintSpeed = defaultSprintSpeed;
+        }
+
+        SetCrosshair(false);
+    }
+
+
+    // ═════════════════════════════════════════════════════════
     // HELPERS
-    // ─────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════
+
     Vector3 ApplySpread(Vector3 direction, float spreadDeg)
     {
         float rx = Random.Range(-spreadDeg, spreadDeg) + recoilY;
@@ -311,60 +408,6 @@ public class PlayerCombat : MonoBehaviour
         recoilY = Mathf.Lerp(recoilY, 0f, recoilRecoverySpeed * Time.deltaTime);
     }
 
-    System.Collections.IEnumerator ShowHitMarker()
-    {
-        if (hitMarker == null) yield break;
-        hitMarker.SetActive(true);
-        yield return new WaitForSeconds(0.08f);
-        hitMarker.SetActive(false);
-    }
-
-    // ── Read-only property for other systems ─────────────────
-    public bool IsAiming => isAiming;
-
-    // ── Ammo event (subscribe from HUD to update ammo counter) ──
-    public event System.Action<int> OnAmmoChanged;
-
-    // ── Weapon equip / unequip ───────────────────────────────
-    /// <summary>
-    /// Called by RiflePickup when the player collects the weapon.
-    /// Enables shooting and aiming.
-    /// </summary>
-    public void EquipWeapon()
-    {
-        hasWeapon = true;
-        if (hipCrosshair != null) hipCrosshair.SetActive(true);
-        Debug.Log("[PlayerCombat] Weapon equipped.");
-    }
-
-    public void UnequipWeapon()
-    {
-        hasWeapon = false;
-        ClearAmmo();
-        SetAimMode(false);
-        SetCrosshair(false);
-        if (hipCrosshair != null) hipCrosshair.SetActive(false);
-        if (adsCrosshair  != null) adsCrosshair.SetActive(false);
-    }
-
-    public bool HasWeapon => hasWeapon;
-
-    /// <summary>
-    /// Add rounds to the player's current count.
-    /// Called by WeaponPickup alongside PlayerInventory.CollectWeaponOrAmmo().
-    /// </summary>
-    public void AddAmmo(int amount)
-    {
-        currentAmmo += amount;
-        OnAmmoChanged?.Invoke(currentAmmo);
-        Debug.Log($"[PlayerCombat] Ammo +{amount} → {currentAmmo} rounds");
-    }
-
-    /// <summary>Empty ammo on unequip/respawn (if keepWeaponOnRespawn = false).</summary>
-    public void ClearAmmo() { currentAmmo = 0; OnAmmoChanged?.Invoke(0); }
-
-    // ── Animator parameter guard ──────────────────────────────
-    /// <summary>Returns true if the animator has a parameter with the given name and type.</summary>
     bool HasAnimatorParam(string paramName, AnimatorControllerParameterType type)
     {
         if (animator == null) return false;

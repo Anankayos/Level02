@@ -41,22 +41,18 @@ public class Bullet : MonoBehaviour
     [Tooltip("Layers that bullets can hit. Default = Everything except Bullet layer")]
     public LayerMask hitLayers = ~0;
 
-    // ── Runtime (not serialized) ──────────────────────────────
+    // ── Runtime ───────────────────────────────────────────────
     private Vector3    velocity;
     private float      distanceTraveled;
     private bool       isEnemyBullet;
     private GameObject ownerObject;
-    private bool       hasHit;      // prevent double-hit
+    private bool       hasHit;
 
-    // ─────────────────────────────────────────────────────────
-    // INITIALIZATION — called immediately after Instantiate()
-    // ─────────────────────────────────────────────────────────
-    /// <summary>
-    /// Must be called after instantiating the bullet.
-    /// </summary>
-    /// <param name="direction">Normalized fire direction</param>
-    /// <param name="fromEnemy">True = enemy bullet → damages PlayerHealth. False = player bullet → damages IDamageable</param>
-    /// <param name="owner">The GameObject that fired (used to avoid self-hit)</param>
+
+    // ═════════════════════════════════════════════════════════
+    // INITIALIZATION
+    // ═════════════════════════════════════════════════════════
+
     public void Initialize(Vector3 direction, bool fromEnemy, GameObject owner)
     {
         velocity         = direction.normalized * speed;
@@ -67,14 +63,15 @@ public class Bullet : MonoBehaviour
 
         transform.forward = direction.normalized;
 
-        // Detach trail from owner hierarchy so it renders correctly
         if (trailRenderer != null)
             trailRenderer.Clear();
     }
 
-    // ─────────────────────────────────────────────────────────
-    // UPDATE — move bullet + continuous raycast (prevents tunnelling)
-    // ─────────────────────────────────────────────────────────
+
+    // ═════════════════════════════════════════════════════════
+    // UPDATE
+    // ═════════════════════════════════════════════════════════
+
     void Update()
     {
         if (hasHit) return;
@@ -85,10 +82,8 @@ public class Bullet : MonoBehaviour
             return;
         }
 
-        // Step size for this frame
         float stepSize = velocity.magnitude * Time.deltaTime;
 
-        // ── Continuous collision raycast (handles fast bullets) ──
         if (Physics.SphereCast(
             transform.position,
             0.05f,
@@ -98,7 +93,6 @@ public class Bullet : MonoBehaviour
             hitLayers,
             QueryTriggerInteraction.Ignore))
         {
-            // Skip owner colliders
             if (!IsOwner(hit.collider))
             {
                 ProcessHit(hit);
@@ -106,7 +100,6 @@ public class Bullet : MonoBehaviour
             }
         }
 
-        // ── Apply gravity + move ──
         velocity.y -= Physics.gravity.y * -gravityScale * Time.deltaTime;
         transform.position += velocity * Time.deltaTime;
 
@@ -116,26 +109,30 @@ public class Bullet : MonoBehaviour
         distanceTraveled += stepSize;
     }
 
-    // ─────────────────────────────────────────────────────────
-    // FALLBACK — trigger collider (for slow bullets / objects)
-    // ─────────────────────────────────────────────────────────
+
+    // ═════════════════════════════════════════════════════════
+    // FALLBACK TRIGGER
+    // ═════════════════════════════════════════════════════════
+
     void OnTriggerEnter(Collider other)
     {
         if (hasHit) return;
         if (IsOwner(other)) return;
-        if (other.GetComponent<Bullet>() != null) return; // ignore other bullets
+        if (other.GetComponent<Bullet>() != null) return;
 
         ProcessHit(other.transform.position, other.gameObject);
     }
 
-    // ─────────────────────────────────────────────────────────
+
+    // ═════════════════════════════════════════════════════════
     // CORE HIT LOGIC
-    // ─────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════
+
     void ProcessHit(RaycastHit hit)
     {
         hasHit = true;
         float damage = ComputeDamage();
-        DeliverDamage(hit.collider, damage);
+        DeliverDamage(hit.collider, damage, hit.collider.gameObject);
         SpawnImpactFX(hit.point, hit.normal);
         Destroy(gameObject);
     }
@@ -145,15 +142,18 @@ public class Bullet : MonoBehaviour
         hasHit = true;
         float damage = ComputeDamage();
 
-        // Try to get collider for damage delivery
         Collider col = hitGO.GetComponent<Collider>();
-        if (col != null) DeliverDamage(col, damage);
+        if (col != null) DeliverDamage(col, damage, hitGO);
 
         SpawnImpactFX(point, Vector3.up);
         Destroy(gameObject);
     }
 
-    // ── Damage interpolation across thresholds ──
+
+    // ═════════════════════════════════════════════════════════
+    // DAMAGE
+    // ═════════════════════════════════════════════════════════
+
     float ComputeDamage()
     {
         if (distanceTraveled <= fullDamageRange) return baseDamage;
@@ -163,22 +163,38 @@ public class Bullet : MonoBehaviour
         return Mathf.Lerp(baseDamage, minDamage, t);
     }
 
-    // ── Route damage to correct recipient ──
-    void DeliverDamage(Collider col, float damage)
+   void DeliverDamage(Collider col, float damage, GameObject hitGO)
+{
+    if (isEnemyBullet)
     {
-        if (isEnemyBullet)
-        {
-            // Enemy bullet → hit PlayerHealth
-            PlayerHealth ph = col.GetComponentInParent<PlayerHealth>();
-            if (ph != null) ph.TakeDamage(damage);
-        }
-        else
-        {
-            // Player bullet → hit IDamageable (enemies, destructibles, etc.)
-            IDamageable target = col.GetComponentInParent<IDamageable>();
-            if (target != null) target.TakeDamage(damage);
-        }
+        PlayerHealth ph = col.GetComponentInParent<PlayerHealth>();
+        if (ph != null) ph.TakeDamage(damage);
+        return;
     }
+
+    // ── DestructibleSurface FIRST (it also implements IDamageable) ──
+    DestructibleSurface ds = col.GetComponentInParent<DestructibleSurface>();
+    if (ds != null)
+    {
+        ds.TakeDamage(damage);
+        GameEvents.FireHit(HitType.Destructible);
+        return;
+    }
+
+    // ── IDamageable second (enemies only at this point) ────────────
+    IDamageable target = col.GetComponentInParent<IDamageable>();
+    if (target != null)
+    {
+        target.TakeDamage(damage);
+        bool isKill = target is EnemyAI e && !e.IsAlive;
+        GameEvents.FireHit(isKill ? HitType.Kill : HitType.Enemy);
+    }
+}
+
+
+    // ═════════════════════════════════════════════════════════
+    // FX & HELPERS
+    // ═════════════════════════════════════════════════════════
 
     void SpawnImpactFX(Vector3 point, Vector3 normal)
     {
@@ -188,10 +204,10 @@ public class Bullet : MonoBehaviour
 
     bool IsOwner(Collider col) =>
         ownerObject != null &&
-        (col.gameObject == ownerObject || col.transform.IsChildOf(ownerObject.transform));
+        (col.gameObject == ownerObject ||
+         col.transform.IsChildOf(ownerObject.transform));
 
 #if UNITY_EDITOR
-    // Visualise bullet path in scene view during play
     void OnDrawGizmos()
     {
         if (!Application.isPlaying) return;

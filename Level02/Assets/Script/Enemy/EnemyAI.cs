@@ -40,13 +40,10 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     [SerializeField] private float     meleeCooldown = 1.6f;
     [SerializeField] private Transform weaponMuzzle;
 
-    // ── PATCH: physical bullet prefab ────────────────────────────
     [Tooltip("Assign the BulletPrefab (Bullet.cs). If left empty, falls back to hitscan.")]
     [SerializeField] private GameObject bulletPrefab;
 
-    // Inaccuracy: 0 = wild spray (±25°), 1 = pinpoint. Mirrors EnemyShooter.
     [SerializeField, Range(0f, 1f)] private float accuracy = 0.60f;
-    // ─────────────────────────────────────────────────────────────
 
 
     [Header("Patrol")]
@@ -79,15 +76,12 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     private State        _state;
     private bool         _ready;
 
-
     // Health
     private float _hp;
-
 
     // Last known player position
     private Vector3 _lkp;
     private bool    _hasLKP;
-
 
     // Patrol
     private int   _wpIndex;
@@ -95,34 +89,28 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     private bool  _wpWaiting;
     private bool  _wpReady;
 
-
     // Suspicious
     private float _suspicion;
     private float _suspLookTimer;
     private bool  _suspMoving;
 
-
     // Search
     private float _searchTimer;
-
 
     // Combat
     private bool isInCombat;
     public  bool IsInCombat => isInCombat;
-    private float        _nextShot;
-    private float        _lostSight;
-    private const float  LostSightTimeout = 3f;
-
+    private float       _nextShot;
+    private float       _lostSight;
+    private const float LostSightTimeout = 3f;
 
     // Melee
     private float _nextMelee;
-
 
     // IResettable
     private string     _id;
     private Vector3    _initPos;
     private Quaternion _initRot;
-
 
     public string ResettableID =>
         string.IsNullOrEmpty(_id) ? (_id = System.Guid.NewGuid().ToString()) : _id;
@@ -195,6 +183,16 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         ExitState(_state);
         _state = next;
         EnterState(_state);
+
+        // ── HUD PATCH ─────────────────────────────────────────
+        EnemyAlertLevel level = next switch
+        {
+            State.Suspicious or State.Search => EnemyAlertLevel.Suspicious,
+            State.Combat     or State.Melee  => EnemyAlertLevel.Alerted,
+            _                                => EnemyAlertLevel.None
+        };
+        GameEvents.FireEnemyAlertChanged(level);
+        // ─────────────────────────────────────────────────────
     }
 
 
@@ -208,7 +206,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 _wpReady     = false;
                 break;
 
-
             case State.Suspicious:
                 _agent.speed   = patrolSpeed * 0.75f;
                 _suspLookTimer = 3.5f;
@@ -217,7 +214,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 if (_hasLKP) Move(_lkp);
                 Debug.Log($"[{name}] ? Suspicious");
                 break;
-
 
             case State.Search:
                 _agent.speed = chaseSpeed * 0.7f;
@@ -228,11 +224,8 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 Debug.Log($"[{name}] !! Searching");
                 break;
 
-
             case State.Combat:
-                // ── PATCH: set isInCombat flag ─────────────────
                 isInCombat   = true;
-                // ───────────────────────────────────────────────
                 _agent.speed = chaseSpeed;
                 _lostSight   = 0f;
                 _nextShot    = Time.time + 0.6f;
@@ -240,22 +233,16 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 Debug.Log($"[{name}] !!! Combat");
                 break;
 
-
             case State.Melee:
-                // ── PATCH: still in combat during melee ────────
                 isInCombat   = true;
-                // ───────────────────────────────────────────────
                 _agent.speed = chaseSpeed;
                 _nextMelee   = Time.time + 0.4f;
                 _anim?.SetBool("IsMelee", true);
                 Debug.Log($"[{name}] Melee");
                 break;
 
-
             case State.Dead:
-                // ── PATCH: clear combat on death ───────────────
                 isInCombat = false;
-                // ───────────────────────────────────────────────
                 _agent.ResetPath();
                 _agent.enabled                   = false;
                 GetComponent<Collider>().enabled = false;
@@ -283,18 +270,14 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                 break;
 
             case State.Combat:
-                // ── PATCH: clear isInCombat on exit ───────────
                 isInCombat = false;
-                // ──────────────────────────────────────────────
                 _agent.ResetPath();
                 _anim?.SetBool("IsInCombat", false);
                 _anim?.SetBool("IsMoving",   false);
                 break;
 
             case State.Melee:
-                // ── PATCH: clear isInCombat on exit ───────────
                 isInCombat = false;
-                // ──────────────────────────────────────────────
                 _anim?.SetBool("IsMelee", false);
                 break;
 
@@ -492,9 +475,18 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     // ═══ IDamageable ═════════════════════════════════════════════
 
 
-    public bool IsAlive => _hp > 0f;
+    public bool IsAlive   => _hp > 0f;
 
-    // ── PATCH: signature now matches IDamageable (source is optional) ──
+    public bool IsAlerted => _state is State.Combat or State.Melee;
+
+    public void ExecuteStealthKill()
+    {
+        if (!IsAlive || IsAlerted) return;
+        _anim?.SetTrigger("StealthKilled");
+        Debug.Log($"[{name}] Stealth killed!");
+        TakeDamage(9999f, null);
+    }
+
     public void TakeDamage(float amount, GameObject source = null)
     {
         if (!IsAlive) return;
@@ -503,8 +495,8 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
         if (source != null) { _lkp = source.transform.position; _hasLKP = true; }
 
-        if (_hp <= 0f)                                           SetState(State.Dead);
-        else if (_state is not (State.Combat or State.Melee))   SetState(State.Combat);
+        if (_hp <= 0f)                                          SetState(State.Dead);
+        else if (_state is not (State.Combat or State.Melee))  SetState(State.Combat);
     }
 
 
@@ -513,22 +505,18 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     public void SaveInitialState() { }
 
-
     public void ResetState()
     {
         _hp        = maxHealth;
         _suspicion = 0f;
         _hasLKP    = false;
         _ready     = false;
-        // ── PATCH: reset combat flag on full reset ─────────────
         isInCombat = false;
-        // ───────────────────────────────────────────────────────
 
         gameObject.SetActive(true);
         GetComponent<Collider>().enabled = true;
         StartCoroutine(ResetCoroutine());
     }
-
 
     private IEnumerator ResetCoroutine()
     {
@@ -539,7 +527,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         yield return new WaitForEndOfFrame();
         if (_agent.isOnNavMesh) { _ready = true; SetState(State.Patrol); }
     }
-
 
     public void ForceKill()
     {
@@ -558,7 +545,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _anim?.SetBool("IsMoving", true);
     }
 
-
     private void Move(Vector3 dest)
     {
         if (!_agent.isActiveAndEnabled || !_agent.isOnNavMesh) return;
@@ -569,17 +555,14 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _agent.SetDestination(dest);
     }
 
-
     private void FaceTarget(Vector3 target)
     {
         Vector3 dir = (target - transform.position).normalized;
         dir.y = 0f;
         if (dir == Vector3.zero) return;
         transform.rotation = Quaternion.Slerp(
-            transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * 12f
-        );
+            transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * 12f);
     }
-
 
     private void StampLKP()
     {
@@ -588,43 +571,52 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _hasLKP = true;
     }
 
-
     private bool PlayerInZone()
     {
         if (patrolZone == null || _player == null) return true;
         return patrolZone.Contains(_player.transform.position);
     }
 
-
     private float Dist(Vector3 p) => Vector3.Distance(transform.position, p);
 
 
     // ═══ Shooting ════════════════════════════════════════════════
 
-    // ── PATCH: replaced hitscan with physical Bullet spawn ────────
-    // If bulletPrefab is not assigned in the Inspector, falls back
-    // to the original hitscan raycast so the enemy still functions.
+
     private void Shoot()
     {
-        if (weaponMuzzle == null || _player == null) return;
+        if (_player == null) return;
+
+        if (weaponMuzzle == null)
+        {
+            GameObject auto = new GameObject("_AutoMuzzle");
+            auto.transform.SetParent(transform);
+            auto.transform.localPosition = new Vector3(0f, 1.4f, 0.5f);
+            weaponMuzzle = auto.transform;
+            Debug.LogWarning($"[{name}] weaponMuzzle not assigned — auto-created at chest height.");
+        }
+
         _anim?.SetTrigger("Shoot");
 
         if (bulletPrefab != null)
+        {
             ShootBullet();
+            Debug.Log($"[{name}] Fired bullet at {_player.name}");
+        }
         else
-            ShootHitscan();   // fallback — remove once bulletPrefab is assigned
+        {
+            ShootHitscan();
+            Debug.Log($"[{name}] Hitscan shot at {_player.name} (no bulletPrefab assigned)");
+        }
 
-        // Notify nearby enemies (existing hearing system)
         NoiseEmitter.EmitNoise(weaponMuzzle.position, 35f, NoiseType.Gunshot, gameObject);
     }
 
-    /// <summary>Physical bullet — spawns Bullet.cs prefab from weaponMuzzle.</summary>
     private void ShootBullet()
     {
         Vector3 target = _player.transform.position + Vector3.up * 0.9f;
         Vector3 dir    = (target - weaponMuzzle.position).normalized;
 
-        // Apply inaccuracy spread: accuracy=0.6 → ±10°
         float maxAngle = Mathf.Lerp(25f, 0f, accuracy);
         dir = (Quaternion.Euler(
             Random.Range(-maxAngle, maxAngle),
@@ -635,12 +627,11 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         Bullet bullet = b.GetComponent<Bullet>();
         if (bullet != null)
         {
-            bullet.baseDamage = shootDamage;   // sync damage from Inspector field
+            bullet.baseDamage = shootDamage;
             bullet.Initialize(dir, fromEnemy: true, owner: gameObject);
         }
     }
 
-    /// <summary>Hitscan fallback — used when no bulletPrefab is assigned.</summary>
     private void ShootHitscan()
     {
         Vector3 dir = (_player.transform.position + Vector3.up * 0.9f) - weaponMuzzle.position;
@@ -650,12 +641,18 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
         if (Physics.Raycast(weaponMuzzle.position, dir.normalized,
                             out RaycastHit hit, shootingRange * 1.5f))
-            hit.collider.GetComponentInParent<IDamageable>()?.TakeDamage(shootDamage, gameObject);
+        {
+            var dmg = hit.collider.GetComponentInParent<IDamageable>();
+            if (dmg != null)
+                dmg.TakeDamage(shootDamage, gameObject);
+            else
+                hit.collider.GetComponentInParent<PlayerHealth>()?.TakeDamage(shootDamage, gameObject);
+        }
     }
-    // ─────────────────────────────────────────────────────────────
 
 
     // ═══ Melee ═══════════════════════════════════════════════════
+
 
     private IEnumerator DelayedMeleeDamage()
     {
@@ -663,21 +660,14 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         if (_player == null) yield break;
         if (Dist(_player.transform.position) <= meleeRange + 0.4f)
         {
-            // ── PATCH: route through PlayerHealth directly ─────
-            // IDamageable on the player may have a different TakeDamage
-            // signature. PlayerHealth is checked first, then IDamageable
-            // as a fallback to support any other damageable in melee range.
             PlayerHealth ph = _player.GetComponent<PlayerHealth>();
             if (ph != null)
                 ph.TakeDamage(meleeDamage);
             else
                 _player.GetComponentInParent<IDamageable>()?.TakeDamage(meleeDamage, gameObject);
-            // ──────────────────────────────────────────────────
         }
     }
 
-    // Animation Event: add "AnimEvent_MeleeDamage" on the MeleeAttack clip
-    // at the exact hit frame as an alternative to the coroutine above.
     public void AnimEvent_MeleeDamage()
     {
         if (_player == null) return;

@@ -218,8 +218,8 @@ MonoBehaviour:
     y: 0
     width: 1103
     height: 518
-  m_MinSize: {x: 200, y: 200}
-  m_MaxSize: {x: 4000, y: 4000}
+  m_MinSize: {x: 202, y: 226}
+  m_MaxSize: {x: 4002, y: 4026}
   m_ActualView: {fileID: 15}
   m_Panes:
   - {fileID: 15}
@@ -302,7 +302,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 43
+    y: 0
     width: 1920
     height: 36
   m_SerializedDataModeController:
@@ -671,7 +671,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 79
+    y: 24
     width: 362
     height: 492
   m_SerializedDataModeController:
@@ -761,8 +761,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Scene\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 363
-    y: 79
+    x: 364
+    y: 24
     width: 1101
     height: 492
   m_SerializedDataModeController:
@@ -1399,7 +1399,7 @@ MonoBehaviour:
   m_Rotation:
     m_Target: {x: -0.08484416, y: -0.7530744, z: 0.09911913, w: -0.64532006}
     speed: 2
-    m_Value: {x: -0.084819466, y: -0.75285524, z: 0.09909028, w: -0.64513224}
+    m_Value: {x: 0.08484416, y: 0.75307435, z: -0.09911912, w: 0.64532}
   m_Size:
     m_Target: 10
     speed: 2
@@ -1601,47 +1601,43 @@ MonoBehaviour:
       m_Data: 51464
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 51068
-    - m_Data: 51072
-    - m_Data: 51074
-    - m_Data: 51076
-    - m_Data: 51078
-    - m_Data: 51080
-    - m_Data: 51082
-    - m_Data: 51084
-    - m_Data: 51086
-    - m_Data: 51088
-    - m_Data: 51090
-    - m_Data: 51092
-    - m_Data: 51094
-    - m_Data: 51096
-    - m_Data: 51098
-    - m_Data: 51100
-    - m_Data: 51102
-    - m_Data: 51104
-    - m_Data: 51106
-    - m_Data: 51108
-    - m_Data: 51110
-    - m_Data: 51112
-    - m_Data: 51114
-    - m_Data: 51116
-    - m_Data: 51118
-    - m_Data: 51120
-    - m_Data: 51122
-    - m_Data: 51124
-    - m_Data: 51126
-    - m_Data: 51128
-    - m_Data: 51130
-    - m_Data: 51132
-    - m_Data: 51134
-    - m_Data: 51136
-    - m_Data: 51138
-    - m_Data: 51140
-    - m_Data: 51144
-    - m_Data: 51146
-    - m_Data: 51472
-    - m_Data: 1000000000
-    - m_Data: 2147483647
+    - m_Data: 51624
+    - m_Data: 51626
+    - m_Data: 51628
+    - m_Data: 51630
+    - m_Data: 51632
+    - m_Data: 51634
+    - m_Data: 51636
+    - m_Data: 51638
+    - m_Data: 51640
+    - m_Data: 51642
+    - m_Data: 51644
+    - m_Data: 51646
+    - m_Data: 51648
+    - m_Data: 51650
+    - m_Data: 51652
+    - m_Data: 51654
+    - m_Data: 51656
+    - m_Data: 51658
+    - m_Data: 51660
+    - m_Data: 51662
+    - m_Data: 51664
+    - m_Data: 51666
+    - m_Data: 51668
+    - m_Data: 51670
+    - m_Data: 51672
+    - m_Data: 51674
+    - m_Data: 51676
+    - m_Data: 51678
+    - m_Data: 51680
+    - m_Data: 51682
+    - m_Data: 51684
+    - m_Data: 51686
+    - m_Data: 51688
+    - m_Data: 51690
+    - m_Data: 51692
+    - m_Data: 51694
+    - m_Data: 51696
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1674,45 +1670,43 @@ MonoBehaviour:
       m_Data: 0
     m_ExpandedIDs:
     - m_Data: 0
-    - m_Data: 51068
-    - m_Data: 51072
-    - m_Data: 51074
-    - m_Data: 51076
-    - m_Data: 51078
-    - m_Data: 51080
-    - m_Data: 51082
-    - m_Data: 51084
-    - m_Data: 51086
-    - m_Data: 51088
-    - m_Data: 51090
-    - m_Data: 51092
-    - m_Data: 51094
-    - m_Data: 51096
-    - m_Data: 51098
-    - m_Data: 51100
-    - m_Data: 51102
-    - m_Data: 51104
-    - m_Data: 51106
-    - m_Data: 51108
-    - m_Data: 51110
-    - m_Data: 51112
-    - m_Data: 51114
-    - m_Data: 51116
-    - m_Data: 51118
-    - m_Data: 51120
-    - m_Data: 51122
-    - m_Data: 51124
-    - m_Data: 51126
-    - m_Data: 51128
-    - m_Data: 51130
-    - m_Data: 51132
-    - m_Data: 51134
-    - m_Data: 51136
-    - m_Data: 51138
-    - m_Data: 51144
-    - m_Data: 51146
-    - m_Data: 1000000000
-    - m_Data: 2147483647
+    - m_Data: 51624
+    - m_Data: 51626
+    - m_Data: 51628
+    - m_Data: 51630
+    - m_Data: 51632
+    - m_Data: 51634
+    - m_Data: 51636
+    - m_Data: 51638
+    - m_Data: 51640
+    - m_Data: 51642
+    - m_Data: 51644
+    - m_Data: 51646
+    - m_Data: 51648
+    - m_Data: 51650
+    - m_Data: 51652
+    - m_Data: 51654
+    - m_Data: 51656
+    - m_Data: 51658
+    - m_Data: 51660
+    - m_Data: 51662
+    - m_Data: 51664
+    - m_Data: 51666
+    - m_Data: 51668
+    - m_Data: 51670
+    - m_Data: 51672
+    - m_Data: 51674
+    - m_Data: 51676
+    - m_Data: 51678
+    - m_Data: 51680
+    - m_Data: 51682
+    - m_Data: 51684
+    - m_Data: 51686
+    - m_Data: 51688
+    - m_Data: 51690
+    - m_Data: 51692
+    - m_Data: 51694
+    - m_Data: 51696
     m_RenameOverlay:
       m_UserAcceptedRename: 0
       m_Name: 
@@ -1800,7 +1794,7 @@ MonoBehaviour:
   m_Pos:
     serializedVersion: 2
     x: 0
-    y: 597
+    y: 542
     width: 1465
     height: 389
   m_SerializedDataModeController:
@@ -1837,8 +1831,8 @@ MonoBehaviour:
     m_TextWithWhitespace: "Inspector\u200B"
   m_Pos:
     serializedVersion: 2
-    x: 1466
-    y: 79
+    x: 1467
+    y: 24
     width: 453
     height: 907
   m_SerializedDataModeController:
