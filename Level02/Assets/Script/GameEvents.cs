@@ -48,7 +48,18 @@ public static class GameEvents
         => OnShowTutorial?.Invoke(message, inputHint, duration);
     public static void FireHideTutorial()
         => OnHideTutorial?.Invoke();
+
+    // ── Stealth Kill ──────────────────────────────────────────
+    public static event Action OnStealthKill;
+    public static void FireStealthKill() => OnStealthKill?.Invoke();
+
+    // ── Stealth Kill Prompt ───────────────────────────────────
+    public static event Action OnShowStealthPrompt;
+    public static event Action OnHideStealthPrompt;
+
+    public static void FireShowStealthPrompt() => OnShowStealthPrompt?.Invoke();
+    public static void FireHideStealthPrompt() => OnHideStealthPrompt?.Invoke();
 }
 
-// ── Standalone enums (no class dependency) ────────────────────
+// ── Standalone enums ──────────────────────────────────────────
 public enum EnemyAlertLevel { None, Suspicious, Alerted }

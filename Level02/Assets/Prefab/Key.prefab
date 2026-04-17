@@ -13,7 +13,6 @@ GameObject:
   - component: {fileID: 962991441063856259}
   - component: {fileID: 5003577551324932677}
   - component: {fileID: 189247132102585721}
-  - component: {fileID: 7481595257908038781}
   m_Layer: 0
   m_Name: Key
   m_TagString: Untagged
@@ -132,15 +131,3 @@ MonoBehaviour:
   phaseOffset: 0
   playerTag: Player
   keyType: 0
---- !u!114 &7481595257908038781
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8492420472801863583}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b30a37450f85d2f45a4a4c8fa0eb5feb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PersistentPickup

@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83f94e1dcb4f82d4099969fe7d552678, type: 3}
+  m_Name: TutorialStealth
+  m_EditorClassIdentifier: Assembly-CSharp::TutorialData
+  tutorialType: 1
+  bodyText: Pressing C you are able to crouch. Use this to avoid enemy sight and
+    hide. Press E while crouching to kill enemies from behind.
+  image: {fileID: 21300000, guid: 38809267458baf54b86a60af51f62f28, type: 3}
+  holdDuration: 2
+  autoHideAfter: 0

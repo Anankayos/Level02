@@ -215,8 +215,8 @@ MonoBehaviour:
   - {fileID: 0}
   - {fileID: 0}
   waypointWait: 2
-  patrolSpeed: 2
-  chaseSpeed: 5
+  patrolSpeed: 1.1
+  chaseSpeed: 3
   suspicionRate: 35
   suspicionDecay: 12
   suspicionThreshold: 100
@@ -234,5 +234,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e5df23cc12afb2a4baeb64c4c1b2a1a7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyFootstepHandler
-  walkNoiseRadius: 3
+  walkNoiseRadius: 1.5
   footstepSounds: []

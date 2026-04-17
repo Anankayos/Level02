@@ -488,16 +488,33 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     }
 
     public void TakeDamage(float amount, GameObject source = null)
+{
+    if (!IsAlive) return;
+    _hp -= amount;
+    _anim?.SetTrigger("Hit");
+
+    if (source != null) { _lkp = source.transform.position; _hasLKP = true; }
+
+    if (_hp <= 0f)
     {
-        if (!IsAlive) return;
-        _hp -= amount;
-        _anim?.SetTrigger("Hit");
+        // ── HUD PATCH: stealth kill detection ─────────────────
+        bool isStealthKill = _state == State.Patrol     ||
+                             _state == State.Suspicious  ||
+                             _state == State.Search;
 
-        if (source != null) { _lkp = source.transform.position; _hasLKP = true; }
+        if (isStealthKill)
+            GameEvents.FireStealthKill();
+        else
+            GameEvents.FireHit(HitType.Kill);
+        // ─────────────────────────────────────────────────────
 
-        if (_hp <= 0f)                                          SetState(State.Dead);
-        else if (_state is not (State.Combat or State.Melee))  SetState(State.Combat);
+        SetState(State.Dead);
     }
+    else if (_state is not (State.Combat or State.Melee))
+    {
+        SetState(State.Combat);
+    }
+}
 
 
     // ═══ IResettable ═════════════════════════════════════════════
@@ -530,6 +547,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     public void ForceKill()
     {
+        
         _hp = 0f;
         if (_state != State.Dead) SetState(State.Dead);
     }

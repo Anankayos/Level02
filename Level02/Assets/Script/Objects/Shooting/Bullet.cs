@@ -22,7 +22,7 @@ public class Bullet : MonoBehaviour
     [Tooltip("Minimum damage beyond this distance (until maxRange)")]
     public float noDamageRange = 60f;
 
-    [Tooltip("Base damage value (player health = 100, so 15 = ~7 shots to kill)")]
+    [Tooltip("Base damage value")]
     public float baseDamage = 15f;
 
     [Tooltip("Minimum damage at extreme range")]
@@ -30,15 +30,11 @@ public class Bullet : MonoBehaviour
 
     // ── FX ────────────────────────────────────────────────────
     [Header("FX (optional)")]
-    [Tooltip("Particle effect spawned at impact point")]
-    public GameObject impactEffectPrefab;
-
-    [Tooltip("Optional trail renderer for bullet trace")]
+    public GameObject  impactEffectPrefab;
     public TrailRenderer trailRenderer;
 
-    // ── Layer filtering ───────────────────────────────────────
+    // ── Layer Filtering ───────────────────────────────────────
     [Header("Layer Filtering")]
-    [Tooltip("Layers that bullets can hit. Default = Everything except Bullet layer")]
     public LayerMask hitLayers = ~0;
 
     // ── Runtime ───────────────────────────────────────────────
@@ -84,6 +80,7 @@ public class Bullet : MonoBehaviour
 
         float stepSize = velocity.magnitude * Time.deltaTime;
 
+        // Continuous SphereCast prevents tunnelling on fast bullets
         if (Physics.SphereCast(
             transform.position,
             0.05f,
@@ -132,7 +129,7 @@ public class Bullet : MonoBehaviour
     {
         hasHit = true;
         float damage = ComputeDamage();
-        DeliverDamage(hit.collider, damage, hit.collider.gameObject);
+        DeliverDamage(hit.collider, damage);
         SpawnImpactFX(hit.point, hit.normal);
         Destroy(gameObject);
     }
@@ -143,7 +140,7 @@ public class Bullet : MonoBehaviour
         float damage = ComputeDamage();
 
         Collider col = hitGO.GetComponent<Collider>();
-        if (col != null) DeliverDamage(col, damage, hitGO);
+        if (col != null) DeliverDamage(col, damage);
 
         SpawnImpactFX(point, Vector3.up);
         Destroy(gameObject);
@@ -151,7 +148,43 @@ public class Bullet : MonoBehaviour
 
 
     // ═════════════════════════════════════════════════════════
-    // DAMAGE
+    // DAMAGE — DestructibleSurface checked BEFORE IDamageable
+    // because DestructibleSurface also implements IDamageable.
+    // Most specific type must always be first.
+    // ═════════════════════════════════════════════════════════
+
+    void DeliverDamage(Collider col, float damage)
+    {
+        if (isEnemyBullet)
+        {
+            // Enemy bullet → only damages PlayerHealth
+            PlayerHealth ph = col.GetComponentInParent<PlayerHealth>();
+            if (ph != null) ph.TakeDamage(damage);
+            return;
+        }
+
+        // ── 1. DestructibleSurface (most specific — checked first) ──
+        DestructibleSurface ds = col.GetComponentInParent<DestructibleSurface>();
+        if (ds != null)
+        {
+            ds.TakeDamage(damage);
+            GameEvents.FireHit(HitType.Destructible);
+            return;
+        }
+
+        // ── 2. IDamageable (enemies and anything else) ─────────────
+        IDamageable target = col.GetComponentInParent<IDamageable>();
+        if (target != null)
+        {
+            target.TakeDamage(damage);
+            bool isKill = target is EnemyAI e && !e.IsAlive;
+            GameEvents.FireHit(isKill ? HitType.Kill : HitType.Enemy);
+        }
+    }
+
+
+    // ═════════════════════════════════════════════════════════
+    // HELPERS
     // ═════════════════════════════════════════════════════════
 
     float ComputeDamage()
@@ -163,39 +196,6 @@ public class Bullet : MonoBehaviour
         return Mathf.Lerp(baseDamage, minDamage, t);
     }
 
-   void DeliverDamage(Collider col, float damage, GameObject hitGO)
-{
-    if (isEnemyBullet)
-    {
-        PlayerHealth ph = col.GetComponentInParent<PlayerHealth>();
-        if (ph != null) ph.TakeDamage(damage);
-        return;
-    }
-
-    // ── DestructibleSurface FIRST (it also implements IDamageable) ──
-    DestructibleSurface ds = col.GetComponentInParent<DestructibleSurface>();
-    if (ds != null)
-    {
-        ds.TakeDamage(damage);
-        GameEvents.FireHit(HitType.Destructible);
-        return;
-    }
-
-    // ── IDamageable second (enemies only at this point) ────────────
-    IDamageable target = col.GetComponentInParent<IDamageable>();
-    if (target != null)
-    {
-        target.TakeDamage(damage);
-        bool isKill = target is EnemyAI e && !e.IsAlive;
-        GameEvents.FireHit(isKill ? HitType.Kill : HitType.Enemy);
-    }
-}
-
-
-    // ═════════════════════════════════════════════════════════
-    // FX & HELPERS
-    // ═════════════════════════════════════════════════════════
-
     void SpawnImpactFX(Vector3 point, Vector3 normal)
     {
         if (impactEffectPrefab != null)
@@ -206,6 +206,7 @@ public class Bullet : MonoBehaviour
         ownerObject != null &&
         (col.gameObject == ownerObject ||
          col.transform.IsChildOf(ownerObject.transform));
+
 
 #if UNITY_EDITOR
     void OnDrawGizmos()
