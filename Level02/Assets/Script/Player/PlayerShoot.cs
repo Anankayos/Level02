@@ -5,6 +5,8 @@ public class PlayerShoot : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private Camera playerCamera;
+    [Header("Shooting")]
+    [SerializeField] private LayerMask shootLayerMask;
 
     [Header("Rifle Stats")]
     [SerializeField] private float range       = 100f;

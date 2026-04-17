@@ -117,10 +117,10 @@ public class PlayerHUD : MonoBehaviour
         if (stealthPromptGroup != null) { stealthPromptGroup.alpha = 0f; stealthPromptGroup.gameObject.SetActive(false); }
 
         // Force-refresh from current player state
-        var ph = FindObjectOfType<PlayerHealth>();
+        var ph = Object.FindFirstObjectByType<PlayerHealth>();
         if (ph != null) HandleHealthChanged((int)ph.CurrentHealth, (int)ph.MaxHealth);
 
-        var pc = FindObjectOfType<PlayerCombat>();
+        var pc = Object.FindFirstObjectByType<PlayerCombat>();
         if (pc != null) HandleAmmoChanged(pc.CurrentAmmo, pc.ReserveAmmo);
     }
 

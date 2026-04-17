@@ -3,33 +3,27 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
-
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(Collider))]
 public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 {
     private enum State { Patrol, Suspicious, Search, Combat, Melee, Dead }
 
-
     // ═══ Inspector ═══════════════════════════════════════════════
 
-
     [Header("Vision")]
-    [SerializeField] private float      visionRange      = 15f;
+    [SerializeField] private float     visionRange      = 15f;
     [SerializeField, Range(10, 180)]
-                     private float      visionAngle      = 65f;
-    [SerializeField] private float      alertVisionAngle = 130f;
-    [SerializeField] private float      peripheralRange  = 3f;
-    [SerializeField] private LayerMask  obstacleLayer;
-
+                     private float     visionAngle      = 65f;
+    [SerializeField] private float     alertVisionAngle = 130f;
+    [SerializeField] private float     peripheralRange  = 3f;
+    [SerializeField] private LayerMask obstacleLayer;
 
     [Header("Hearing")]
     [SerializeField] private float hearingRange = 10f;
 
-
     [Header("Health")]
     [SerializeField] private float maxHealth = 100f;
-
 
     [Header("Combat")]
     [SerializeField] private float     shootingRange = 18f;
@@ -45,6 +39,9 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     [SerializeField, Range(0f, 1f)] private float accuracy = 0.60f;
 
+    [Header("Floor Separation")]
+    [Tooltip("Max Y difference between enemy and player to allow vision/shooting. ~half floor height.")]
+    [SerializeField] private float maxFloorHeightDiff = 2.5f;
 
     [Header("Patrol")]
     [SerializeField] private Transform[] waypoints;
@@ -52,23 +49,18 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     [SerializeField] private float       patrolSpeed  = 2f;
     [SerializeField] private float       chaseSpeed   = 5f;
 
-
     [Header("Suspicion")]
     [SerializeField] private float suspicionRate      = 35f;
     [SerializeField] private float suspicionDecay     = 12f;
     [SerializeField] private float suspicionThreshold = 100f;
 
-
     [Header("Search")]
     [SerializeField] private float searchDuration = 10f;
-
 
     [Header("Zone (optional)")]
     [SerializeField] private PatrolZone patrolZone;
 
-
     // ═══ Runtime ════════════════════════════════════════════════
-
 
     private NavMeshAgent _agent;
     private Animator     _anim;
@@ -98,8 +90,8 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     private float _searchTimer;
 
     // Combat
-    private bool isInCombat;
-    public  bool IsInCombat => isInCombat;
+    private bool  isInCombat;
+    public  bool  IsInCombat => isInCombat;
     private float       _nextShot;
     private float       _lostSight;
     private const float LostSightTimeout = 3f;
@@ -115,9 +107,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     public string ResettableID =>
         string.IsNullOrEmpty(_id) ? (_id = System.Guid.NewGuid().ToString()) : _id;
 
-
     // ═══ Unity Messages ══════════════════════════════════════════
-
 
     private void Awake()
     {
@@ -132,7 +122,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
         NoiseEmitter.OnNoiseEmitted += OnNoiseHeard;
     }
-
 
     private IEnumerator Start()
     {
@@ -156,7 +145,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         SetState(State.Patrol);
     }
 
-
     private void Update()
     {
         if (!_ready || !_agent.isActiveAndEnabled || !_agent.isOnNavMesh) return;
@@ -174,9 +162,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     // ═══ State Machine ═══════════════════════════════════════════
-
 
     private void SetState(State next)
     {
@@ -184,7 +170,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _state = next;
         EnterState(_state);
 
-        // ── HUD PATCH ─────────────────────────────────────────
         EnemyAlertLevel level = next switch
         {
             State.Suspicious or State.Search => EnemyAlertLevel.Suspicious,
@@ -192,9 +177,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
             _                                => EnemyAlertLevel.None
         };
         GameEvents.FireEnemyAlertChanged(level);
-        // ─────────────────────────────────────────────────────
     }
-
 
     private void EnterState(State s)
     {
@@ -254,7 +237,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     private void ExitState(State s)
     {
         switch (s)
@@ -289,9 +271,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     // ═══ State Ticks ═════════════════════════════════════════════
-
 
     private void TickPatrol()
     {
@@ -320,7 +300,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     private void TickSuspicious()
     {
         if (CanSeePlayer()) { StampLKP(); SetState(State.Combat); return; }
@@ -342,7 +321,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     private void TickSearch()
     {
         if (CanSeePlayer()) { StampLKP(); SetState(State.Combat); return; }
@@ -350,7 +328,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _searchTimer -= Time.deltaTime;
         if (_searchTimer <= 0f) { _hasLKP = false; _suspicion = 0f; SetState(State.Patrol); }
     }
-
 
     private void TickCombat()
     {
@@ -390,7 +367,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _anim?.SetBool("IsMoving", _agent.velocity.magnitude > 0.2f);
     }
 
-
     private void TickMelee()
     {
         if (_player == null) return;
@@ -414,14 +390,16 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     // ═══ Vision ══════════════════════════════════════════════════
-
 
     private bool CanSeePlayer()
     {
         if (_player == null) return false;
         if (patrolZone != null && !patrolZone.Contains(_player.transform.position)) return false;
+
+        // ── Floor separation: ignore player on different floor ──
+        float yDiff = Mathf.Abs(_player.transform.position.y - transform.position.y);
+        if (yDiff > maxFloorHeightDiff) return false;
 
         Vector3 toPlayer = _player.transform.position - transform.position;
         float   dist     = toPlayer.magnitude;
@@ -435,7 +413,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         return LineOfSight(_player.transform.position);
     }
 
-
     private bool LineOfSight(Vector3 target)
     {
         Vector3 eye = transform.position + Vector3.up * 1.6f;
@@ -443,9 +420,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         return !Physics.Raycast(eye, dir.normalized, out _, dir.magnitude, obstacleLayer);
     }
 
-
     // ═══ Hearing ════════════════════════════════════════════════
-
 
     private void OnNoiseHeard(Vector3 pos, float radius, NoiseType type, GameObject source)
     {
@@ -471,12 +446,9 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     // ═══ IDamageable ═════════════════════════════════════════════
 
-
     public bool IsAlive   => _hp > 0f;
-
     public bool IsAlerted => _state is State.Combat or State.Melee;
 
     public void ExecuteStealthKill()
@@ -488,37 +460,33 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     }
 
     public void TakeDamage(float amount, GameObject source = null)
-{
-    if (!IsAlive) return;
-    _hp -= amount;
-    _anim?.SetTrigger("Hit");
-
-    if (source != null) { _lkp = source.transform.position; _hasLKP = true; }
-
-    if (_hp <= 0f)
     {
-        // ── HUD PATCH: stealth kill detection ─────────────────
-        bool isStealthKill = _state == State.Patrol     ||
-                             _state == State.Suspicious  ||
-                             _state == State.Search;
+        if (!IsAlive) return;
+        _hp -= amount;
+        _anim?.SetTrigger("Hit");
 
-        if (isStealthKill)
-            GameEvents.FireStealthKill();
-        else
-            GameEvents.FireHit(HitType.Kill);
-        // ─────────────────────────────────────────────────────
+        if (source != null) { _lkp = source.transform.position; _hasLKP = true; }
 
-        SetState(State.Dead);
+        if (_hp <= 0f)
+        {
+            bool isStealthKill = _state == State.Patrol    ||
+                                 _state == State.Suspicious ||
+                                 _state == State.Search;
+
+            if (isStealthKill)
+                GameEvents.FireStealthKill();
+            else
+                GameEvents.FireHit(HitType.Kill);
+
+            SetState(State.Dead);
+        }
+        else if (_state is not (State.Combat or State.Melee))
+        {
+            SetState(State.Combat);
+        }
     }
-    else if (_state is not (State.Combat or State.Melee))
-    {
-        SetState(State.Combat);
-    }
-}
-
 
     // ═══ IResettable ═════════════════════════════════════════════
-
 
     public void SaveInitialState() { }
 
@@ -547,14 +515,11 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     public void ForceKill()
     {
-        
         _hp = 0f;
         if (_state != State.Dead) SetState(State.Dead);
     }
 
-
     // ═══ Utilities ═══════════════════════════════════════════════
-
 
     private void MoveToWaypoint()
     {
@@ -597,9 +562,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     private float Dist(Vector3 p) => Vector3.Distance(transform.position, p);
 
-
     // ═══ Shooting ════════════════════════════════════════════════
-
 
     private void Shoot()
     {
@@ -632,6 +595,10 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     private void ShootBullet()
     {
+        // ── Floor separation: skip shot if player is on a different floor ──
+        float yDiff = Mathf.Abs(_player.transform.position.y - weaponMuzzle.position.y);
+        if (yDiff > maxFloorHeightDiff) return;
+
         Vector3 target = _player.transform.position + Vector3.up * 0.9f;
         Vector3 dir    = (target - weaponMuzzle.position).normalized;
 
@@ -652,13 +619,19 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     private void ShootHitscan()
     {
-        Vector3 dir = (_player.transform.position + Vector3.up * 0.9f) - weaponMuzzle.position;
+        // ── Floor separation: skip shot if player is on a different floor ──
+        float yDiff = Mathf.Abs(_player.transform.position.y - weaponMuzzle.position.y);
+        if (yDiff > maxFloorHeightDiff) return;
+
+        Vector3 targetPos = _player.transform.position + Vector3.up * 0.9f;
+        Vector3 dir       = targetPos - weaponMuzzle.position;
         dir += new Vector3(Random.Range(-0.08f, 0.08f),
                            Random.Range(-0.05f, 0.05f),
                            Random.Range(-0.08f, 0.08f));
 
-        if (Physics.Raycast(weaponMuzzle.position, dir.normalized,
-                            out RaycastHit hit, shootingRange * 1.5f))
+        // ── SphereCast skips thin merged floor geometry ──────────
+        Ray shootRay = new Ray(weaponMuzzle.position, dir.normalized);
+        if (Physics.SphereCast(shootRay, 0.12f, out RaycastHit hit, shootingRange * 1.5f))
         {
             var dmg = hit.collider.GetComponentInParent<IDamageable>();
             if (dmg != null)
@@ -668,9 +641,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         }
     }
 
-
     // ═══ Melee ═══════════════════════════════════════════════════
-
 
     private IEnumerator DelayedMeleeDamage()
     {
@@ -698,9 +669,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
             _player.GetComponentInParent<IDamageable>()?.TakeDamage(meleeDamage, gameObject);
     }
 
-
     // ═══ Gizmos ══════════════════════════════════════════════════
-
 
     private void OnDrawGizmosSelected()
     {
@@ -721,7 +690,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, meleeRange);
     }
-
 
     private void OnDestroy() => NoiseEmitter.OnNoiseEmitted -= OnNoiseHeard;
 }

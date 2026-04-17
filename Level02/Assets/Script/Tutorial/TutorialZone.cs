@@ -5,55 +5,76 @@ public class TutorialZone : MonoBehaviour
     [Header("Tutorial")]
     [SerializeField] private TutorialData tutorialData;
     [SerializeField] private bool triggerOnce = true;
+    [SerializeField] private string playerTag = "Player";
 
     [Header("Detection")]
-    [SerializeField] private Transform player;
-    [SerializeField] private string playerTag = "Player";
     [SerializeField] private float radius = 3f;
     [SerializeField] private bool useXZOnly = true;
 
-    private bool _triggered;
-    private bool _wasInside;
+    [Header("Floor Separation")]
+    [Tooltip("Max Y difference between player and zone to allow trigger. Tune to ~half your floor height.")]
+    [SerializeField] private float maxHeightDifference = 2f;
 
-    private void Start()
+    // ── Runtime ───────────────────────────────────────────────
+    private Transform player;
+    private bool      hasTriggered;
+
+    // ═════════════════════════════════════════════════════════
+    // INIT
+    // ═════════════════════════════════════════════════════════
+
+    void Start()
     {
-        FindPlayer();
+        AutoFindPlayer();
     }
 
-    private void Update()
+    // ═════════════════════════════════════════════════════════
+    // UPDATE
+    // ═════════════════════════════════════════════════════════
+
+    void Update()
     {
-        if (triggerOnce && _triggered) return;
+        if (player == null)   { AutoFindPlayer(); return; }
+        if (hasTriggered && triggerOnce) return;
 
-        if (player == null) FindPlayer();
-        if (player == null) return;
-        if (TutorialManager.Instance == null) return;
-        if (tutorialData == null) return;
+        float xzDist = FlatDistance(transform.position, player.position);
+        float yDist  = Mathf.Abs(player.position.y - transform.position.y);
 
-        float dist = useXZOnly
-            ? FlatDistance(transform.position, player.position)
-            : Vector3.Distance(transform.position, player.position);
-
-        bool inside = dist <= radius;
-
-        if (inside && !_wasInside)
+        if (xzDist <= radius && yDist <= maxHeightDifference)
         {
-            _triggered = true;
-            Debug.Log("[TutorialZone] Player entered zone. Firing: " + tutorialData.name);
-            TutorialManager.Instance.Show(tutorialData);
+            Trigger();
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════
+    // TRIGGER
+    // ═════════════════════════════════════════════════════════
+
+    private void Trigger()
+    {
+        if (tutorialData == null)
+        {
+            Debug.LogWarning("[TutorialZone] No TutorialData assigned on " + gameObject.name);
+            return;
         }
 
-        _wasInside = inside;
+        TutorialManager.Instance?.Show(tutorialData);
+
+        if (triggerOnce) hasTriggered = true;
     }
 
     public void ResetZone()
     {
-        _triggered = false;
-        _wasInside = false;
+        hasTriggered = false;
     }
 
-    private void FindPlayer()
+    // ═════════════════════════════════════════════════════════
+    // HELPERS
+    // ═════════════════════════════════════════════════════════
+
+    private void AutoFindPlayer()
     {
-        GameObject go = GameObject.FindGameObjectWithTag(playerTag);
+        GameObject go = GameObject.FindWithTag(playerTag);
         if (go != null) player = go.transform;
     }
 
@@ -64,11 +85,22 @@ public class TutorialZone : MonoBehaviour
         return Vector3.Distance(a, b);
     }
 
+    // ═════════════════════════════════════════════════════════
+    // GIZMOS
+    // ═════════════════════════════════════════════════════════
+
     private void OnDrawGizmosSelected()
     {
-        Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
-        Gizmos.DrawSphere(transform.position, radius);
+        // XZ radius ring — shows horizontal detection range
         Gizmos.color = Color.green;
         Gizmos.DrawWireSphere(transform.position, radius);
+
+        // Vertical range — shows floor separation band
+        Gizmos.color = Color.yellow;
+        Vector3 top    = transform.position + Vector3.up    * maxHeightDifference;
+        Vector3 bottom = transform.position + Vector3.down  * maxHeightDifference;
+        Gizmos.DrawLine(top, bottom);
+        Gizmos.DrawWireSphere(top,    0.15f);
+        Gizmos.DrawWireSphere(bottom, 0.15f);
     }
 }

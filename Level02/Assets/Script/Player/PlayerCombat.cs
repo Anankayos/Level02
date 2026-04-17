@@ -23,7 +23,7 @@ public class PlayerCombat : MonoBehaviour, IResettable
     [Tooltip("Layers the aim ray can hit (enemies, world geometry)")]
     public LayerMask aimLayer = ~0;
 
-    // ── Shooting ──────────────────────────────────────────────
+   // ── Shooting ──────────────────────────────────────────────
     [Header("Shooting")]
     [Tooltip("Seconds between shots (0.25 = 4 shots/sec semi-auto feel)")]
     public float fireRate = 0.25f;
@@ -33,6 +33,15 @@ public class PlayerCombat : MonoBehaviour, IResettable
 
     [Tooltip("ADS spread in degrees (±). Tight when aiming")]
     public float adsSpread = 0.8f;
+
+    [Tooltip("Ignore raycast hits closer than this distance (prevents hitting merged floor slabs)")]
+    public float minHitDistance = 1.5f;
+    [Header("Shooting - Floor Fix")]
+    [Tooltip("Layer mask for what bullets can HIT. Assign Enemies + Destructibles only.")]
+    public LayerMask bulletHitMask;
+
+    [Tooltip("Fallback aim distance when no valid target is found.")]
+    public float aimFallbackDistance = 300f;
 
     // ── Recoil ────────────────────────────────────────────────
     [Header("Recoil")]
@@ -121,7 +130,7 @@ public class PlayerCombat : MonoBehaviour, IResettable
         animator    = GetComponent<Animator>();
         audioSource = GetComponent<AudioSource>();
         mainCamera  = Camera.main;
-        _crosshair  = FindObjectOfType<CrosshairController>();
+        _crosshair = Object.FindFirstObjectByType<CrosshairController>();
 
         var tpc = GetComponent<StarterAssets.ThirdPersonController>();
         if (tpc != null)
@@ -257,54 +266,73 @@ public class PlayerCombat : MonoBehaviour, IResettable
         Fire();
     }
 
-    void Fire()
+ void Fire()
+{
+    if (currentAmmo <= 0) return;
+    currentAmmo--;
+    nextFireTime = Time.time + fireRate;
+
+    OnAmmoChanged?.Invoke(currentAmmo);
+    GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
+
+    if (muzzlePoint == null)
     {
-        if (currentAmmo <= 0) return;
-        currentAmmo--;
-        nextFireTime = Time.time + fireRate;
-
-        OnAmmoChanged?.Invoke(currentAmmo);
-        GameEvents.FireAmmoChanged(currentAmmo, ReserveAmmo);
-
-        Ray screenRay = mainCamera.ScreenPointToRay(
-            new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
-
-        bool hitSomething = Physics.Raycast(screenRay, out RaycastHit aimHit, 300f, aimLayer);
-        Vector3 aimWorldTarget = hitSomething ? aimHit.point : screenRay.GetPoint(200f);
-
-        
-
-        // ── Spawn bullet ──────────────────────────────────────
-        if (muzzlePoint == null)
-        {
-            Debug.LogWarning("[PlayerCombat] MuzzlePoint not assigned.");
-            return;
-        }
-
-        Vector3 dir = (aimWorldTarget - muzzlePoint.position).normalized;
-        dir = ApplySpread(dir, isAiming ? adsSpread : hipFireSpread);
-
-        if (bulletPrefab != null)
-        {
-            GameObject bulletGO = Instantiate(bulletPrefab,
-                muzzlePoint.position, Quaternion.LookRotation(dir));
-
-            Bullet bullet = bulletGO.GetComponent<Bullet>();
-            if (bullet != null)
-                bullet.Initialize(dir, fromEnemy: false, owner: gameObject);
-        }
-
-        recoilY += recoilPerShot;
-        _crosshair?.OnShot();
-
-        if (animator != null && _hasShootTrigger)
-            animator.SetTrigger("Shoot");
-
-        if (audioSource != null && shootSFX != null)
-            audioSource.PlayOneShot(shootSFX);
-
-        NoiseEmitter.EmitNoise(transform.position, 30f, NoiseType.Gunshot, gameObject);
+        Debug.LogWarning("[PlayerCombat] MuzzlePoint not assigned.");
+        return;
     }
+
+    // ── Step 1: find aim target ignoring ALL geometry ──────────
+    // Cast only against enemies/destructibles first
+    Ray screenRay = mainCamera.ScreenPointToRay(
+        new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
+
+    Vector3 aimWorldTarget;
+
+    if (Physics.Raycast(screenRay, out RaycastHit enemyHit, aimFallbackDistance, bulletHitMask))
+    {
+        // Crosshair is pointing at an enemy or destructible → aim at it
+        aimWorldTarget = enemyHit.point;
+    }
+    else
+    {
+        // No enemy in crosshair → aim at a far point along the ray
+        // Use aimLayer (full geometry) but with a minimum distance guard
+        if (Physics.Raycast(screenRay, out RaycastHit geoHit, aimFallbackDistance, aimLayer)
+            && geoHit.distance > 2f)
+        {
+            aimWorldTarget = geoHit.point;
+        }
+        else
+        {
+            aimWorldTarget = screenRay.GetPoint(aimFallbackDistance);
+        }
+    }
+
+    // ── Step 2: fire bullet from muzzle TOWARD that world point ─
+    Vector3 dir = (aimWorldTarget - muzzlePoint.position).normalized;
+    dir = ApplySpread(dir, isAiming ? adsSpread : hipFireSpread);
+
+    if (bulletPrefab != null)
+    {
+        GameObject bulletGO = Instantiate(bulletPrefab,
+            muzzlePoint.position, Quaternion.LookRotation(dir));
+
+        Bullet bullet = bulletGO.GetComponent<Bullet>();
+        if (bullet != null)
+            bullet.Initialize(dir, fromEnemy: false, owner: gameObject);
+    }
+
+    recoilY += recoilPerShot;
+    _crosshair?.OnShot();
+
+    if (animator != null && _hasShootTrigger)
+        animator.SetTrigger("Shoot");
+
+    if (audioSource != null && shootSFX != null)
+        audioSource.PlayOneShot(shootSFX);
+
+    NoiseEmitter.EmitNoise(transform.position, 30f, NoiseType.Gunshot, gameObject);
+}
 
 
     // ═════════════════════════════════════════════════════════
