@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &9068069035786662183
+--- !u!1 &7996375445844809247
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,7 +8,7 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 5194915416068776533}
+  - component: {fileID: 7089718779804504171}
   m_Layer: 6
   m_Name: muzzlePoint
   m_TagString: Untagged
@@ -16,16 +16,16 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &5194915416068776533
+--- !u!4 &7089718779804504171
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 9068069035786662183}
+  m_GameObject: {fileID: 7996375445844809247}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.166, z: 0}
+  m_LocalRotation: {x: 0.0000001362641, y: -0.00000007450579, z: -0.0000000613836, w: 1}
+  m_LocalPosition: {x: -0, y: 0.16600035, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 1
   m_Children: []
@@ -339,8 +339,8 @@ PrefabInstance:
     m_RemovedGameObjects: []
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 7790177421927552515, guid: dae172041db961746b2bb6b2cae2b5f0, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 5194915416068776533}
+      insertIndex: 0
+      addedObject: {fileID: 7089718779804504171}
     m_AddedComponents:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: dae172041db961746b2bb6b2cae2b5f0, type: 3}
       insertIndex: -1
@@ -445,35 +445,35 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f08ea7cf018b4a542893a3222afae448, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAI
-  visionRange: 10
-  visionAngle: 48
-  alertVisionAngle: 130
-  peripheralRange: 2
+  visionRange: 8
+  visionAngle: 35
+  alertVisionAngle: 100
+  peripheralRange: 1
   obstacleLayer:
     serializedVersion: 2
     m_Bits: 0
-  hearingRange: 3
+  hearingRange: 1.5
   maxHealth: 100
   shootingRange: 18
   meleeRange: 2
-  shootCooldown: 1.8
+  shootCooldown: 1.3
   shootDamage: 10
   meleeDamage: 22
   meleeCooldown: 1.6
-  weaponMuzzle: {fileID: 5194915416068776533}
+  weaponMuzzle: {fileID: 0}
   bulletPrefab: {fileID: 3107345626525647907, guid: 5d237c76cf0c0394c808fba2b6c75aaa, type: 3}
-  accuracy: 0.6
+  accuracy: 0.7
   maxFloorHeightDiff: 2.5
   waypoints:
   - {fileID: 0}
   - {fileID: 0}
   waypointWait: 2
   patrolSpeed: 1.1
-  chaseSpeed: 3
+  chaseSpeed: 2
   suspicionRate: 35
   suspicionDecay: 12
   suspicionThreshold: 100
-  searchDuration: 10
+  searchDuration: 8
   patrolZone: {fileID: 0}
 --- !u!114 &5702901659539238027
 MonoBehaviour:
@@ -487,5 +487,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e5df23cc12afb2a4baeb64c4c1b2a1a7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyFootstepHandler
-  walkNoiseRadius: 1.5
+  walkNoiseRadius: 1
   footstepSounds: []

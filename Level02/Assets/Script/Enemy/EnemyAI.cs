@@ -65,6 +65,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     private NavMeshAgent _agent;
     private Animator     _anim;
     private GameObject   _player;
+    private WeaponSFX    _weaponSFX;
     private State        _state;
     private bool         _ready;
 
@@ -96,6 +97,10 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
     private float       _lostSight;
     private const float LostSightTimeout = 3f;
 
+    // ── AUDIO PATCH: Music tracking ──
+    private static int _globalEnemiesInCombat = 0;
+    private bool       _contributingToMusic   = false;
+
     // Melee
     private float _nextMelee;
 
@@ -114,6 +119,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         _agent  = GetComponent<NavMeshAgent>();
         _anim   = GetComponent<Animator>();
         _player = GameObject.FindWithTag("Player");
+        _weaponSFX = GetComponent<WeaponSFX>();
         _hp     = maxHealth;
         _initPos = transform.position;
         _initRot = transform.rotation;
@@ -177,6 +183,27 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
             _                                => EnemyAlertLevel.None
         };
         GameEvents.FireEnemyAlertChanged(level);
+
+        // ── AUDIO PATCH: Trigger Battle Music Crossfade ──
+        UpdateMusicState(next);
+    }
+
+    private void UpdateMusicState(State currentState)
+    {
+        bool activeCombat = currentState is State.Combat or State.Melee;
+        if (activeCombat && !_contributingToMusic)
+        {
+            _contributingToMusic = true;
+            _globalEnemiesInCombat++;
+            if (AudioManager.Instance != null) AudioManager.Instance.PlayMusic(AudioManager.MusicState.Battle);
+        }
+        else if (!activeCombat && _contributingToMusic)
+        {
+            _contributingToMusic = false;
+            _globalEnemiesInCombat = Mathf.Max(0, _globalEnemiesInCombat - 1);
+            if (_globalEnemiesInCombat <= 0 && AudioManager.Instance != null)
+                AudioManager.Instance.PlayMusic(AudioManager.MusicState.Main);
+        }
     }
 
     private void EnterState(State s)
@@ -422,10 +449,15 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     // ═══ Hearing ════════════════════════════════════════════════
 
+       // ═══ Hearing ════════════════════════════════════════════════
+
     private void OnNoiseHeard(Vector3 pos, float radius, NoiseType type, GameObject source)
     {
         if (source == gameObject) return;
         if (_state == State.Dead || !_ready) return;
+
+        // ── PATROL ZONE CHECK: Ignore sounds outside my zone ──
+        if (patrolZone != null && !patrolZone.Contains(pos)) return;
 
         float range = hearingRange + radius;
         if (type == NoiseType.Gunshot) range *= 2.2f;
@@ -459,13 +491,20 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         TakeDamage(9999f, null);
     }
 
-    public void TakeDamage(float amount, GameObject source = null)
+        public void TakeDamage(float amount, GameObject source = null)
     {
         if (!IsAlive) return;
         _hp -= amount;
         _anim?.SetTrigger("Hit");
 
-        if (source != null) { _lkp = source.transform.position; _hasLKP = true; }
+        bool sourceInZone = true;
+        if (source != null) 
+        { 
+            _lkp = source.transform.position; 
+            _hasLKP = true; 
+            if (patrolZone != null && !patrolZone.Contains(_lkp))
+                sourceInZone = false; // Sniped from outside the zone
+        }
 
         if (_hp <= 0f)
         {
@@ -473,19 +512,21 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                                  _state == State.Suspicious ||
                                  _state == State.Search;
 
-            if (isStealthKill)
-                GameEvents.FireStealthKill();
-            else
-                GameEvents.FireHit(HitType.Kill);
+            if (isStealthKill) GameEvents.FireStealthKill();
+            else               GameEvents.FireHit(HitType.Kill);
 
             SetState(State.Dead);
         }
         else if (_state is not (State.Combat or State.Melee))
         {
-            SetState(State.Combat);
+            // If shot from outside the zone, just Search the edge. 
+            // Only enter Combat if the player is actually inside the zone.
+            if (sourceInZone)
+                SetState(State.Combat);
+            else
+                SetState(State.Search);
         }
     }
-
     // ═══ IResettable ═════════════════════════════════════════════
 
     public void SaveInitialState() { }
@@ -583,6 +624,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         {
             ShootBullet();
             Debug.Log($"[{name}] Fired bullet at {_player.name}");
+            // Audio is handled securely by WeaponSFX on ProjectileEnemy
         }
         else
         {
@@ -590,12 +632,12 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
             Debug.Log($"[{name}] Hitscan shot at {_player.name} (no bulletPrefab assigned)");
         }
 
+        _weaponSFX?.PlayShot(); 
         NoiseEmitter.EmitNoise(weaponMuzzle.position, 35f, NoiseType.Gunshot, gameObject);
     }
 
     private void ShootBullet()
     {
-        // ── Floor separation: skip shot if player is on a different floor ──
         float yDiff = Mathf.Abs(_player.transform.position.y - weaponMuzzle.position.y);
         if (yDiff > maxFloorHeightDiff) return;
 
@@ -619,7 +661,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     private void ShootHitscan()
     {
-        // ── Floor separation: skip shot if player is on a different floor ──
         float yDiff = Mathf.Abs(_player.transform.position.y - weaponMuzzle.position.y);
         if (yDiff > maxFloorHeightDiff) return;
 
@@ -629,7 +670,6 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
                            Random.Range(-0.05f, 0.05f),
                            Random.Range(-0.08f, 0.08f));
 
-        // ── SphereCast skips thin merged floor geometry ──────────
         Ray shootRay = new Ray(weaponMuzzle.position, dir.normalized);
         if (Physics.SphereCast(shootRay, 0.12f, out RaycastHit hit, shootingRange * 1.5f))
         {
@@ -669,7 +709,20 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
             _player.GetComponentInParent<IDamageable>()?.TakeDamage(meleeDamage, gameObject);
     }
 
-    // ═══ Gizmos ══════════════════════════════════════════════════
+    // ═══ Cleanup & Gizmos ════════════════════════════════════════
+
+    private void OnDestroy()
+    {
+        NoiseEmitter.OnNoiseEmitted -= OnNoiseHeard;
+
+        // ── AUDIO PATCH: Cleanup music counter if enemy is deleted mid-fight ──
+        if (_contributingToMusic)
+        {
+            _globalEnemiesInCombat = Mathf.Max(0, _globalEnemiesInCombat - 1);
+            if (_globalEnemiesInCombat <= 0 && AudioManager.Instance != null)
+                AudioManager.Instance.PlayMusic(AudioManager.MusicState.Main);
+        }
+    }
 
     private void OnDrawGizmosSelected()
     {
@@ -690,6 +743,4 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
         Gizmos.color = Color.red;
         Gizmos.DrawWireSphere(transform.position, meleeRange);
     }
-
-    private void OnDestroy() => NoiseEmitter.OnNoiseEmitted -= OnNoiseHeard;
 }

@@ -49,39 +49,43 @@
     <Analyzer Include="C:\Program Files\Unity\Hub\Editor\6000.3.6f1\Editor\Data\Tools\BuildPipeline\Unity.SourceGenerators\Unity.UIToolkit.SourceGenerator.dll" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Assets\Script\Enemy\BossExplosive.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\MedikitPickup.cs" />
-    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\Commenteds\CommentedCameraController.cs" />
     <Compile Include="Assets\Script\Objects\Shooting\WeaponPickup.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialZone.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\VirtualInputs\UIVirtualTouchZone.cs" />
-    <Compile Include="Assets\Script\Player\IDamageable.cs" />
+    <Compile Include="Assets\Script\Enemy\BossPart.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\KeyPickup.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\VirtualInputs\UIVirtualJoystick.cs" />
     <Compile Include="Assets\Script\Objects\Train\TrainRoofTrigger.cs" />
     <Compile Include="Assets\Script\Checkpoint\CheckpointManager.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialPopupUI.cs" />
+    <Compile Include="Assets\Script\Audio\SFXManager.cs" />
     <Compile Include="Assets\Script\Objects\NoiseEmitter.cs" />
     <Compile Include="Assets\Script\Enemy\PatrolZone.cs" />
     <Compile Include="Assets\Script\Objects\Door.cs" />
+    <Compile Include="Assets\Script\Audio\WeaponSFX.cs" />
     <Compile Include="Assets\Script\Objects\Train\TrainMover.cs" />
     <Compile Include="Assets\Script\Player\PlayerNoiseEmitter.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\FloatingPickup.cs" />
     <Compile Include="Assets\Script\Player\PlayerHUD.cs" />
+    <Compile Include="Assets\Script\Enemy\BossHealthBarUI.cs" />
     <Compile Include="Assets\Script\Objects\Train\TrainDamageZone.cs" />
-    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\ThirdPersonController.cs" />
+    <Compile Include="Assets\Script\Enemy\IDamageable.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialData.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\Utilities\MobileDisableAutoSwitchControls.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialOverlayUI.cs" />
-    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\Commenteds\CommentedThirdPersonController.cs" />
     <Compile Include="Assets\Script\Objects\Shooting\Bullet.cs" />
     <Compile Include="Assets\Script\Player\CameraAimController.cs" />
     <Compile Include="Assets\Script\Enemy\EnemyAI.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\DestructibleSurface.cs" />
+    <Compile Include="Assets\Script\Audio\FootstepSFX.cs" />
     <Compile Include="Assets\StarterAssets\ThirdPersonController\Scripts\ThirdPersonController.cs" />
+    <Compile Include="Assets\Script\Enemy\BossCoverSystem.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\KeyType.cs" />
     <Compile Include="Assets\Script\Player\PlayerShoot.cs" />
+    <Compile Include="Assets\Script\Enemy\IResettable.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\ATMCardPickup.cs" />
-    <Compile Include="Assets\Script\Player\IResettable.cs" />
     <Compile Include="Assets\Script\Player\PlayerCombat.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\VirtualInputs\UIVirtualButton.cs" />
     <Compile Include="Assets\TutorialInfo\Scripts\Readme.cs" />
@@ -92,11 +96,11 @@
     <Compile Include="Assets\Script\Objects\CollectWeapon\IntelData.cs" />
     <Compile Include="Assets\Script\Objects\Shooting\HitMarkerController.cs" />
     <Compile Include="Assets\Script\Checkpoint\CheckpointData.cs" />
-    <Compile Include="Assets\EasyStart Third Person Controller\Scripts\CameraController.cs" />
     <Compile Include="Assets\Script\Player\PlayerInventory.cs" />
     <Compile Include="Assets\StarterAssets\Mobile\Scripts\CanvasInputs\UICanvasControllerInput.cs" />
     <Compile Include="Assets\Script\HitType.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialDirectCaller.cs" />
+    <Compile Include="Assets\Script\Enemy\BossAI.cs" />
     <Compile Include="Assets\Script\Checkpoint\Checkpoint.cs" />
     <Compile Include="Assets\Script\Checkpoint\PersistentPickup.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialManager.cs" />
@@ -108,6 +112,7 @@
     <Compile Include="Assets\Script\Player\StealthKill.cs" />
     <Compile Include="Assets\StarterAssets\InputSystem\StarterAssetsInputs.cs" />
     <Compile Include="Assets\Script\Player\PlayerHealth.cs" />
+    <Compile Include="Assets\Script\Audio\AudioManager.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\TextMesh Pro\Shaders\TMPro.cginc" />
@@ -115,7 +120,6 @@
     <None Include="Assets\AssetHunts!\GameDev Essential Kit - Mannequin\Hello Fellow Dev!.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile-2-Pass.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_Bitmap.shader" />
-    <None Include="Assets\EasyStart Third Person Controller\Prefabs\Source\Models\credits.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Mobile.cginc" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF SSD.shader" />
     <None Include="Assets\AssetHunts!\GameDev Essential Kit - Mannequin\Pink Issue!.txt" />
