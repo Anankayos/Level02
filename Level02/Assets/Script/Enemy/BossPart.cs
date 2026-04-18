@@ -23,34 +23,37 @@ public class BossPart : MonoBehaviour, IDamageable
 public void TakeDamage(float amount, GameObject source = null)
 {
     if (IsDestroyed) return;
-
+    Debug.Log($"[BossPart] {partName} hit for {amount} | HP: {_currentHealth}");
     _currentHealth -= amount;
     GameEvents.FireHit(HitType.Destructible);
-
     if (_currentHealth <= 0f) DestroyPart();
 }
     private void DestroyPart()
-    {
-        IsDestroyed = true;
+{
+    IsDestroyed = true;
 
-        if (destroyedVFX) Instantiate(destroyedVFX, transform.position, Quaternion.identity);
-        if (intactMesh) intactMesh.SetActive(false);
-        if (destroyedMesh) destroyedMesh.SetActive(true);
+    if (destroyedVFX) Instantiate(destroyedVFX, transform.position, Quaternion.identity);
+    if (intactMesh)    intactMesh.SetActive(false);
+    if (destroyedMesh) destroyedMesh.SetActive(true);
+    if (TryGetComponent<Collider>(out var col)) col.enabled = false;
 
-        // Disable collider so bullets pass through
-        if (TryGetComponent<Collider>(out var col)) col.enabled = false;
+    // Notify boss root
+    var bossRoot = GetComponentInParent<BossAI>();
+    bossRoot?.TakeDamage(0f);
 
-        OnPartDestroyed?.Invoke(this);
-        Debug.Log($"[Boss] Part destroyed: {partName}");
-    }
+    OnPartDestroyed?.Invoke(this);
+    Debug.Log($"[Boss] Part destroyed: {partName}");
+}
 
     // Called by CheckpointManager / IResettable on boss reset
     public void ResetPart()
     {
+        
         IsDestroyed = false;
         _currentHealth = partHealth;
         if (intactMesh) intactMesh.SetActive(true);
         if (destroyedMesh) destroyedMesh.SetActive(false);
         if (TryGetComponent<Collider>(out var col)) col.enabled = true;
     }
+    
 }

@@ -22,7 +22,7 @@ public class CheckpointManager : MonoBehaviour
         public int  reserveAmmo;
         public bool hadWeapon;
 
-        public List<string>   collectedIDs  = new List<string>();
+        public List<string>    collectedIDs  = new List<string>();
         public HashSet<string> persistentIDs = new HashSet<string>();
 
         public bool HasData => respawnPosition != Vector3.zero || playerHealth > 0f;
@@ -92,7 +92,7 @@ public class CheckpointManager : MonoBehaviour
 
     IEnumerator LoadRoutine()
     {
-        // Phase 1: Reset all IResettable objects
+        // Phase 1: Reset ALL IResettable objects including boss
         foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
             if (mb is IResettable r) r.ResetState();
 
@@ -159,8 +159,8 @@ public class CheckpointManager : MonoBehaviour
         // Step 4: restore ammo
         if (combat != null && _saved.hadWeapon)
         {
-            combat.EquipWeapon();                      
-            combat.RestoreAmmo(_saved.primaryAmmo);    
+            combat.EquipWeapon();
+            combat.RestoreAmmo(_saved.primaryAmmo);
         }
 
         // Step 5: notify respawn complete

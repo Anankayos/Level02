@@ -451,7 +451,7 @@ MonoBehaviour:
   peripheralRange: 1
   obstacleLayer:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 1
   hearingRange: 1.5
   maxHealth: 100
   shootingRange: 18
