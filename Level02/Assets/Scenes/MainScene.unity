@@ -4462,6 +4462,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 954573223}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: waypoints.Array.size
       value: 1
       objectReference: {fileID: 0}
@@ -4617,6 +4621,14 @@ PrefabInstance:
       propertyPath: patrolZone
       value: 
       objectReference: {fileID: 1001164176}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: weaponMuzzle
+      value: 
+      objectReference: {fileID: 717131035}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: 'waypoints.Array.data[0]'
       value: 
@@ -4885,6 +4897,10 @@ PrefabInstance:
       propertyPath: weaponMuzzle
       value: 
       objectReference: {fileID: 1209876408}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: waypoints.Array.size
       value: 1
@@ -7574,6 +7590,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 1116294970}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: 'waypoints.Array.data[0]'
       value: 
       objectReference: {fileID: 1123820150}
@@ -9352,6 +9372,11 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 8926831038383826014, guid: dc24d63f750e5024da54e282587217e6, type: 3}
   m_PrefabInstance: {fileID: 357137082}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &357327553 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7089718779804504171, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+  m_PrefabInstance: {fileID: 8795043057756135485}
   m_PrefabAsset: {fileID: 0}
 --- !u!1 &358018226
 GameObject:
@@ -43639,7 +43664,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Thsi should be the last puzzle for last unlockabel. It works the following
+  m_text: Thsi should be the last puzzle for last unlockabele It works the following
     way.The player activate a button where the x is (inner part of the wall, he has
     to wait untill door closes, the door of the room on this wall opens only when
     the other is sealed.
@@ -43971,6 +43996,10 @@ PrefabInstance:
       propertyPath: weaponMuzzle
       value: 
       objectReference: {fileID: 1574640027}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: 'waypoints.Array.data[0]'
       value: 
@@ -45065,6 +45094,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 214584964}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: waypoints.Array.size
       value: 1
       objectReference: {fileID: 0}
@@ -45413,6 +45446,11 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
+--- !u!4 &717131035 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 7089718779804504171, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+  m_PrefabInstance: {fileID: 175602429}
+  m_PrefabAsset: {fileID: 0}
 --- !u!4 &718058807 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7068121343381041567, guid: 00757879dc8d2534f8a7a68f1b97480e, type: 3}
@@ -45679,6 +45717,10 @@ PrefabInstance:
       propertyPath: weaponMuzzle
       value: 
       objectReference: {fileID: 745461309}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: waypoints.Array.size
       value: 2
@@ -61231,7 +61273,7 @@ MonoBehaviour:
   maxFloorHeightDiff: 2.5
   shootMask:
     serializedVersion: 2
-    m_Bits: 4294967291
+    m_Bits: 123
   waypoints:
   - {fileID: 1517665601}
   waypointWait: 2
@@ -65385,6 +65427,10 @@ PrefabInstance:
       value: 
       objectReference: {fileID: 556646336}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: 'waypoints.Array.data[0]'
       value: 
       objectReference: {fileID: 84532024}
@@ -66114,6 +66160,10 @@ PrefabInstance:
       propertyPath: weaponMuzzle
       value: 
       objectReference: {fileID: 304073200}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: waypoints.Array.size
       value: 2
@@ -66869,6 +66919,10 @@ PrefabInstance:
       propertyPath: weaponMuzzle
       value: 
       objectReference: {fileID: 1094284711}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: waypoints.Array.size
       value: 1
@@ -68050,6 +68104,10 @@ PrefabInstance:
       propertyPath: weaponMuzzle
       value: 
       objectReference: {fileID: 1387311199}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: shootMask.m_Bits
+      value: 123
+      objectReference: {fileID: 0}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: waypoints.Array.size
       value: 1
@@ -83957,6 +84015,10 @@ PrefabInstance:
       propertyPath: patrolSpeed
       value: 1.1
       objectReference: {fileID: 0}
+    - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
+      propertyPath: weaponMuzzle
+      value: 
+      objectReference: {fileID: 357327553}
     - target: {fileID: 8332923790946170001, guid: 40898202749d6d34cbfcc1ba4ec54803, type: 3}
       propertyPath: searchDuration
       value: 8
