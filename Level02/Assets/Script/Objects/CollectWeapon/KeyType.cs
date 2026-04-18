@@ -1,1 +1,1 @@
-public enum KeyType { KeyA, KeyB, KeyC }
+public enum KeyType { KeyA, KeyB, KeyC, KeyD }

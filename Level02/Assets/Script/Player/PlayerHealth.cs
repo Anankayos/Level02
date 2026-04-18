@@ -498,4 +498,35 @@ public class PlayerHealth : MonoBehaviour, IDamageable, IResettable
         c.a = 0f;
         damageFlashImage.color = c;
     }
+
+private void OnCollisionEnter(Collision collision)
+{
+    // Check if we touched a surface tagged "Death"
+    if (collision.gameObject.CompareTag("Death"))
+    {
+        Debug.Log("[Player] Touched a Death zone!");
+        
+        // Call your player's death or damage method here.
+        // For example, if your player implements IDamageable:
+        if (TryGetComponent<IDamageable>(out var damageable))
+        {
+            damageable.TakeDamage(9999f); // Instant kill
+        }
+        else
+        {
+            // Fallback if you don't use IDamageable:
+            // Die(); 
+            // currentHealth = 0;
+            Debug.LogWarning("[Player] No damage method found to trigger death.");
+        }
+    }
+}
+private void OnTriggerEnter(Collider other)
+{
+    if (other.CompareTag("Death"))
+    {
+        Debug.Log("[Player] Entered Death zone.");
+        TakeDamage(9999f);
+    }
+}
 }

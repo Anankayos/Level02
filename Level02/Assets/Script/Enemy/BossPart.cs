@@ -6,54 +6,77 @@ public class BossPart : MonoBehaviour, IDamageable
     [Header("Part Config")]
     [SerializeField] private string partName = "Chest Plate";
     [SerializeField] private float partHealth = 50f;
-    [SerializeField] private GameObject destroyedVFX;       // particle prefab
-    [SerializeField] private GameObject destroyedMesh;      // optional broken mesh
+    [SerializeField] private GameObject destroyedVFX;
+    [SerializeField] private GameObject destroyedMesh;
     [SerializeField] private GameObject intactMesh;
+    
+    [Header("Visuals")]
+    [SerializeField] private MeshRenderer partRenderer;
+    [SerializeField] private Color targetColor = Color.red;
+    
+    private Color _originalColor;
 
     public bool IsDestroyed { get; private set; } = false;
     public static event Action<BossPart> OnPartDestroyed;
 
     private float _currentHealth;
 
-    private void Awake() => _currentHealth = partHealth;
+    private void Awake() 
+    {
+        _currentHealth = partHealth;
+        if (partRenderer != null)
+            _originalColor = partRenderer.material.color;
+    }
 
-    // IDamageable implementation — matches your project's signature
     public bool IsAlive => !IsDestroyed;
 
-public void TakeDamage(float amount, GameObject source = null)
-{
-    if (IsDestroyed) return;
-    Debug.Log($"[BossPart] {partName} hit for {amount} | HP: {_currentHealth}");
-    _currentHealth -= amount;
-    GameEvents.FireHit(HitType.Destructible);
-    if (_currentHealth <= 0f) DestroyPart();
-}
+    public void TakeDamage(float amount, GameObject source = null)
+    {
+        if (IsDestroyed) return;
+        
+        _currentHealth -= amount;
+        Debug.Log($"[BossPart] {partName} hit for {amount}. HP: {_currentHealth}");
+
+        if (_currentHealth <= 0)
+            DestroyPart();
+    }
+
     private void DestroyPart()
-{
-    IsDestroyed = true;
+    {
+        IsDestroyed = true;
 
-    if (destroyedVFX) Instantiate(destroyedVFX, transform.position, Quaternion.identity);
-    if (intactMesh)    intactMesh.SetActive(false);
-    if (destroyedMesh) destroyedMesh.SetActive(true);
-    if (TryGetComponent<Collider>(out var col)) col.enabled = false;
+        if (destroyedVFX) Instantiate(destroyedVFX, transform.position, Quaternion.identity);
+        if (intactMesh)    intactMesh.SetActive(false);
+        if (destroyedMesh) destroyedMesh.SetActive(true);
+        if (TryGetComponent<Collider>(out var col)) col.enabled = false;
 
-    // Notify boss root
-    var bossRoot = GetComponentInParent<BossAI>();
-    bossRoot?.TakeDamage(0f);
+        // Turn invisible when destroyed
+        if (partRenderer != null)
+            partRenderer.enabled = false;
 
-    OnPartDestroyed?.Invoke(this);
-    Debug.Log($"[Boss] Part destroyed: {partName}");
-}
+        OnPartDestroyed?.Invoke(this);
+    }
 
-    // Called by CheckpointManager / IResettable on boss reset
+    public void HighlightPart()
+    {
+        if (partRenderer != null && !IsDestroyed)
+            partRenderer.material.color = targetColor;
+    }
+
     public void ResetPart()
     {
-        
         IsDestroyed = false;
         _currentHealth = partHealth;
+        
         if (intactMesh) intactMesh.SetActive(true);
         if (destroyedMesh) destroyedMesh.SetActive(false);
         if (TryGetComponent<Collider>(out var col)) col.enabled = true;
+        
+        // Make visible again and reset color
+        if (partRenderer != null)
+        {
+            partRenderer.enabled = true;
+            partRenderer.material.color = _originalColor;
+        }
     }
-    
 }

@@ -20,7 +20,6 @@ public class BossHealthBarUI : MonoBehaviour
 
     private void Awake()
     {
-        // Always start hidden — overrides any Editor active state
         if (bossHUDRoot != null)
             bossHUDRoot.SetActive(false);
     }
@@ -29,7 +28,6 @@ public class BossHealthBarUI : MonoBehaviour
     {
         _maxHP = maxHP;
 
-        // Must activate root BEFORE touching child components
         bossHUDRoot.SetActive(true);
 
         healthSlider.minValue = 0f;
@@ -39,6 +37,8 @@ public class BossHealthBarUI : MonoBehaviour
         if (bossNameLabel)  bossNameLabel.text  = bossName;
         if (partCountLabel) partCountLabel.text = "Parts: 5 / 5";
         if (fillImage)      fillImage.color     = healthyColor;
+
+        Debug.Log("[BossHUD] Initialized.");
     }
 
     public void UpdateHealth(float currentHP, int partsRemaining)
@@ -60,5 +60,7 @@ public class BossHealthBarUI : MonoBehaviour
     {
         if (bossHUDRoot != null)
             bossHUDRoot.SetActive(false);
+
+        Debug.Log("[BossHUD] Hidden.");
     }
 }

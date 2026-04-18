@@ -4,17 +4,19 @@ using UnityEngine;
 using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent))]
-[RequireComponent(typeof(BossCoverSystem))]
 public class BossAI : MonoBehaviour, IDamageable, IResettable
 {
     // ─────────────────────── Inspector ───────────────────────
     [Header("Core")]
     [SerializeField] private string bossName       = "UNIT-7 OVERSEER";
     [SerializeField] private float  maxHealth      = 500f;
-    [SerializeField] private float  coverHealthPct = 0.70f;
+    [SerializeField] private float  patrolHealthPct = 0.70f;
+
+    [Header("Z-Axis Lock")]
+    [SerializeField] private float lockedZ         = 0f;
+    [SerializeField] private float strafeRange     = 6f;
 
     [Header("Shooting")]
-    [SerializeField] private Transform  muzzlePoint;
     [SerializeField] private GameObject bulletPrefab;
     [SerializeField] private float      fireRate   = 0.8f;
     [SerializeField] private int        burstCount = 3;
@@ -24,12 +26,18 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     [SerializeField] private Transform  throwOrigin;
     [SerializeField] private GameObject explosivePrefab;
     [SerializeField] private float      throwForce    = 12f;
-    [SerializeField] private float      throwCooldown = 8f;
+    [SerializeField] private float      throwCooldown = 6f;
+    [SerializeField] private int        grenadesUnlockAtPartsDestroyed = 2;
 
     [Header("Movement")]
     [SerializeField] private float chaseSpeed     = 4f;
-    [SerializeField] private float coverSpeed     = 6f;
-    [SerializeField] private float engageDistance = 18f;
+    [SerializeField] private float patrolSpeed    = 7f;
+    [SerializeField] private float engageDistance = 20f;
+
+    [Header("Patrol Points")]
+    [Tooltip("Drag 5 empty GameObjects here for the boss to move between")]
+    [SerializeField] private Transform[] patrolPoints;
+    [SerializeField] private float timeAtPoint = 3f;
 
     [Header("Parts")]
     [SerializeField] private List<BossPart> parts = new();
@@ -37,67 +45,52 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     [Header("UI")]
     [SerializeField] private BossHealthBarUI healthBarUI;
 
+    [Header("Arena")]
+    [SerializeField] private BossArenaWall arenaWall;
+    [SerializeField] private BossBridge    arenaBridge;
+
     [Header("Animation")]
     [SerializeField] private Animator bossAnimator;
-
-   // ─────────────────────── Audio ───────────────────────────
-    private bool _battleMusicActive = false; 
-
+    public GameObject elevator;
     // ─────────────────────── State ───────────────────────────
-    private enum BossState { Idle, Engaging, TakingCover, Throwing, Dead }
+    private enum BossState { Idle, Engaging, Patrolling, Throwing, Dead }
     private BossState _state = BossState.Idle;
 
-    private float           _currentHealth;
-    private NavMeshAgent    _agent;
-    private BossCoverSystem _cover;
-    private Transform       _player;
-    private float           _lastFireTime;
-    private float           _lastThrowTime;
-    private int             _partsAlive = 5;
-    private Vector3         _spawnPos;
-    private Quaternion      _spawnRot;
+    public bool FightStarted { get; private set; } = false;
 
-    [Header("Arena")]
-[SerializeField] private BossArenaWall arenaWall;
-[SerializeField] private BossBridge    arenaBridge;
-[Header("UI")]
-[SerializeField] private GameObject      bossHUDObject;
-public bool FightStarted { get; private set; } = false;
+    private float        _currentHealth;
+    private NavMeshAgent _agent;
+    private Transform    _player;
+    private float        _lastFireTime;
+    private float        _lastThrowTime;
+    private int          _partsDestroyed = 0;
+    private int          _partsAlive     = 5;
+    private Vector3      _spawnPos;
+    private Quaternion   _spawnRot;
+    private bool         _battleMusicActive = false;
+    private int          _currentPatrolIndex = 0;
 
     // ─────────────────────── Lifecycle ───────────────────────
-   private void Awake()
-{
-    _agent    = GetComponent<NavMeshAgent>();
-    _cover    = GetComponent<BossCoverSystem>();
-    _player   = GameObject.FindGameObjectWithTag("Player")?.transform;
-    _spawnPos = transform.position;
-    _spawnRot = transform.rotation;
-    InitHealthBar();
-
-    // Subscribe here — guaranteed to run regardless of active state
-    BossPart.OnPartDestroyed += HandlePartDestroyed;
-}
-private void InitHealthBar()
-{
-    if (bossHUDObject != null)
-        healthBarUI = bossHUDObject.GetComponent<BossHealthBarUI>();
-}
-private void OnDestroy()
-{
-    BossPart.OnPartDestroyed -= HandlePartDestroyed;
-}
-
-
-    private void Start()
+    private void Awake()
     {
-        _currentHealth = maxHealth;
-        healthBarUI?.Initialize(maxHealth, bossName);
+        _agent    = GetComponent<NavMeshAgent>();
+        _player   = GameObject.FindGameObjectWithTag("Player")?.transform;
+        _spawnPos = transform.position;
+        _spawnRot = transform.rotation;
+        lockedZ   = transform.position.z;
+
+        BossPart.OnPartDestroyed += HandlePartDestroyed;
     }
+
+    private void OnDestroy() => BossPart.OnPartDestroyed -= HandlePartDestroyed;
+
+    private void Start() => _currentHealth = maxHealth;
 
     private void Update()
     {
-        if (_state == BossState.Dead || _player == null) return;
-
+        if (_player == null || _state == BossState.Dead) return;
+         if (Time.frameCount % 60 == 0)
+        Debug.Log($"[Boss Status] State: {_state} | isStopped: {_agent.isStopped} | speed: {_agent.speed}");
         float dist = Vector3.Distance(transform.position, _player.position);
 
         switch (_state)
@@ -108,16 +101,15 @@ private void OnDestroy()
 
             case BossState.Engaging:
                 FaceTarget(_player.position);
-                _agent.SetDestination(_player.position);
+                EnforceZAxis();
+                StrafeTowardPlayer();
                 TryFireBurst();
                 TryThrowExplosive();
-                CheckForCover();
+                CheckForPatrol();
                 break;
 
-            case BossState.TakingCover:
-                TryFireBurst();
-                if (!_agent.pathPending && _agent.remainingDistance < 0.6f)
-                    EnterEngage();
+            case BossState.Patrolling:
+        FaceTarget(_player.position);
                 break;
 
             case BossState.Throwing:
@@ -125,8 +117,26 @@ private void OnDestroy()
         }
     }
 
+    // ─────────────────────── Z-Axis Lock ─────────────────────
+    private void EnforceZAxis()
+    {
+        if (!_agent.isActiveAndEnabled || !_agent.isOnNavMesh) return;
+        Vector3 pos = transform.position;
+        if (Mathf.Abs(pos.z - lockedZ) > 0.05f)
+            _agent.Warp(new Vector3(pos.x, pos.y, lockedZ));
+    }
+
+    private void StrafeTowardPlayer()
+    {
+        if (!_agent.isActiveAndEnabled || !_agent.isOnNavMesh) return;
+        float targetX  = Mathf.Clamp(_player.position.x,
+                                      _spawnPos.x - strafeRange,
+                                      _spawnPos.x + strafeRange);
+        _agent.SetDestination(new Vector3(targetX, transform.position.y, lockedZ));
+    }
+
     // ─────────────────────── State Transitions ───────────────
-  private void EnterEngage()
+    private void EnterEngage()
 {
     if (_state == BossState.Idle)
     {
@@ -134,124 +144,155 @@ private void OnDestroy()
         healthBarUI?.Initialize(maxHealth, bossName);
         StartBattleMusic();
         arenaWall?.ActivateWalls();
+        
+        foreach (var part in parts)
+        {
+            if (part != null)
+                part.HighlightPart();
+        }
     }
 
     _state = BossState.Engaging;
     _agent.speed = chaseSpeed;
     bossAnimator?.SetBool("isWalking", true);
 }
-private void StartBattleMusic()
-{
-    if (_battleMusicActive) return;
-    _battleMusicActive = true;
-    AudioManager.Instance?.PlayMusic(AudioManager.MusicState.Battle);
-    Debug.Log("[Boss] Battle music started.");
-}
-
-private void StopBattleMusic()
-{
-    if (!_battleMusicActive) return;
-    _battleMusicActive = false;
-    AudioManager.Instance?.PlayMusic(AudioManager.MusicState.Main);
-    Debug.Log("[Boss] Battle music stopped.");
-}
-    private void CheckForCover()
+    private void CheckForPatrol()
     {
         float hpPct = _currentHealth / maxHealth;
-        if (hpPct > coverHealthPct) return;
+        if (hpPct > patrolHealthPct) return;
         if (Time.time - _lastFireTime < 2f) return;
 
-        if (_cover.TryGetCoverPosition(_player.position, out Vector3 coverPos))
+        StartPatrolCycle();
+    }
+
+    // ─────────────────────── Patrol Movement ───────────────────────
+    private void StartPatrolCycle()
+    {
+        if (patrolPoints == null || patrolPoints.Length == 0)
         {
-            _state = BossState.TakingCover;
-            _agent.speed = coverSpeed;
-            _cover.MoveToCover(coverPos);
+            Debug.LogWarning("[Boss] No patrol points assigned! Staying in place.");
+            EnterEngage();
+            return;
+        }
+
+        StopAllCoroutines();
+        _state = BossState.Patrolling;
+        _agent.speed = patrolSpeed;
+        _agent.isStopped = false;
+        bossAnimator?.SetBool("isWalking", true);
+        
+        StartCoroutine(PatrolCycleCoroutine());
+    }
+
+   private IEnumerator PatrolCycleCoroutine()
+{
+    while (_state != BossState.Dead)
+    {
+        // 1. Move to the next point
+        Transform targetPoint = patrolPoints[_currentPatrolIndex];
+        
+        // Debug to see where he's trying to go
+        Debug.Log($"[Boss] Patrolling to point {_currentPatrolIndex}: {targetPoint.position}");
+        
+        _agent.isStopped = false;
+        _agent.SetDestination(targetPoint.position);
+
+        // Wait a few frames for path calculation
+        yield return null;
+        yield return null;
+        yield return null;
+
+        // Wait until actually arrived
+        yield return new WaitUntil(() => 
+            !_agent.pathPending && 
+            _agent.remainingDistance <= _agent.stoppingDistance);
+
+        Debug.Log($"[Boss] Arrived at point {_currentPatrolIndex}");
+
+        _agent.isStopped = true;
+        bossAnimator?.SetBool("isWalking", false);
+
+        // 2. Stay at point, face player, and shoot for 'timeAtPoint' seconds
+        float timer = 0f;
+        while (timer < timeAtPoint && _state != BossState.Dead)
+        {
+            FaceTarget(_player.position);
+            TryFireBurst();
+            timer += Time.deltaTime;
+            yield return null;
+        }
+
+        // 3. Pick the next point
+        _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
+        bossAnimator?.SetBool("isWalking", true);
+    }
+}
+
+    // ─────────────────────── Shooting ────────────────────────
+    private void TryFireBurst()
+    {
+        if (Time.time - _lastFireTime < fireRate) return;
+        if (!HasLineOfSight()) return;
+        _lastFireTime = Time.time;
+        StartCoroutine(FireBurstCoroutine());
+    }
+
+    private IEnumerator FireBurstCoroutine()
+    {
+        for (int i = 0; i < burstCount; i++)
+        {
+            SpawnBullet();
+            yield return new WaitForSeconds(0.12f);
         }
     }
 
-    // ─────────────────────── Shooting ────────────────────────
-private void TryFireBurst()
-{
-    if (Time.time - _lastFireTime < fireRate) return;
-    if (!HasLineOfSight()) return;
+    private Vector3 GetFireOrigin() =>
+        transform.position + Vector3.up * 1.8f + transform.forward * 0.5f;
 
-    _lastFireTime = Time.time;
-    StartCoroutine(FireBurstCoroutine());
-}
-
-private IEnumerator FireBurstCoroutine()
-{
-    for (int i = 0; i < burstCount; i++)
+    private void SpawnBullet()
     {
-        SpawnBullet();
-        yield return new WaitForSeconds(0.12f);
+        if (!bulletPrefab || _player == null) return;
+
+        Vector3 origin    = GetFireOrigin();
+        Vector3 targetPos = _player.position + Vector3.up * 0.8f;
+        Vector3 dir       = (targetPos - origin).normalized;
+
+        float minY = Mathf.Sin(-30f * Mathf.Deg2Rad);
+        if (dir.y < minY) dir = new Vector3(dir.x, minY, dir.z).normalized;
+
+        dir = ApplyInaccuracy(dir);
+
+        var go     = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(dir));
+        var bullet = go.GetComponent<Bullet>();
+        if (bullet != null)
+        {
+            bullet.baseDamage = 15f;
+            bullet.Initialize(dir, fromEnemy: true, owner: gameObject);
+        }
     }
-}
 
-// Calculates a safe chest-height origin — no bone/Transform dependency
-private Vector3 GetFireOrigin()
-{
-    // Always 1.8 units above the boss root, pushed 0.5 forward
-    return transform.position
-           + Vector3.up * 1.8f
-           + transform.forward * 0.5f;
-}
-
-private void SpawnBullet()
-{
-    if (!bulletPrefab || _player == null) return;
-
-    Vector3 origin    = GetFireOrigin();
-    Vector3 targetPos = _player.position + Vector3.up * 0.8f;
-    Vector3 dir       = (targetPos - origin).normalized;
-
-    // Hard clamp — never fire below -30 degrees
-    float minY = Mathf.Sin(-30f * Mathf.Deg2Rad);
-    if (dir.y < minY)
-        dir = new Vector3(dir.x, minY, dir.z).normalized;
-
-    dir = ApplyInaccuracy(dir);
-
-    var go     = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(dir));
-    var bullet = go.GetComponent<Bullet>();
-
-    if (bullet != null)
+    private Vector3 ApplyInaccuracy(Vector3 dir)
     {
-        // Use your existing Bullet.Initialize — same as EnemyAI
-        bullet.baseDamage = 15f;
-        bullet.Initialize(dir, fromEnemy: true, owner: gameObject);
+        float spread = 1f - accuracy;
+        dir += new Vector3(
+            Random.Range(-spread, spread),
+            Random.Range(-spread * 0.5f, spread * 0.5f),
+            Random.Range(-spread, spread));
+        return dir.normalized;
     }
-    else if (go.TryGetComponent<Rigidbody>(out var rb) && !rb.isKinematic)
+
+    private bool HasLineOfSight()
     {
-        // Fallback only if no Bullet.cs and non-kinematic
-        rb.linearVelocity = dir * 40f;
+        Vector3 origin = GetFireOrigin();
+        Vector3 to     = _player.position + Vector3.up * 0.8f;
+        return !Physics.Linecast(origin, to, LayerMask.GetMask("Default", "Environment"));
     }
-}
-
-private Vector3 ApplyInaccuracy(Vector3 dir)
-{
-    float spread = 1f - accuracy;
-    dir += new Vector3(
-        Random.Range(-spread, spread),
-        Random.Range(-spread * 0.5f, spread * 0.5f),
-        Random.Range(-spread, spread));
-    return dir.normalized;
-}
-
-private bool HasLineOfSight()
-{
-    Vector3 origin = GetFireOrigin();
-    Vector3 to     = _player.position + Vector3.up * 0.8f;
-    return !Physics.Linecast(origin, to,
-                             LayerMask.GetMask("Default", "Environment"));
-}
 
     // ─────────────────────── Explosives ──────────────────────
     private void TryThrowExplosive()
     {
+        if (_partsDestroyed < grenadesUnlockAtPartsDestroyed) return;
         if (Time.time - _lastThrowTime < throwCooldown) return;
-        if (_partsAlive > 3) return;
-
         _lastThrowTime = Time.time;
         StartCoroutine(ThrowCoroutine());
     }
@@ -268,145 +309,165 @@ private bool HasLineOfSight()
         if (explosivePrefab && throwOrigin)
         {
             var go = Instantiate(explosivePrefab, throwOrigin.position, Quaternion.identity);
-            if (go.TryGetComponent<Rigidbody>(out var rb))
+            if (go.TryGetComponent<Rigidbody>(out var rb) && !rb.isKinematic)
             {
                 Vector3 toPlayer = (_player.position - throwOrigin.position).normalized;
                 rb.AddForce((toPlayer + Vector3.up * 0.5f) * throwForce, ForceMode.Impulse);
+            }
+            else if (go.GetComponent<Bullet>() is Bullet b)
+            {
+                Vector3 toPlayer = (_player.position - throwOrigin.position).normalized;
+                b.Initialize(toPlayer, fromEnemy: true, owner: gameObject);
             }
         }
 
         yield return new WaitForSeconds(0.4f);
         _agent.isStopped = false;
-        EnterEngage();
+        
+        // Return to patrol if HP is low enough, otherwise engage
+        if (_currentHealth / maxHealth <= patrolHealthPct)
+            StartPatrolCycle();
+        else
+            EnterEngage();
     }
 
     // ─────────────────────── Parts ───────────────────────────
-    private void HandlePartDestroyed(BossPart part)
+   private void HandlePartDestroyed(BossPart part)
 {
-    if (!parts.Contains(part))
+    if (!parts.Contains(part)) return;
+
+    _partsAlive--;
+    _partsDestroyed++;
+
+    // IF 0 PARTS ALIVE, INSTANT KILL
+    if (_partsAlive <= 0)
     {
-        Debug.LogWarning($"[Boss] Part {part.name} destroyed but NOT in parts list!");
+        _currentHealth = 0;
+        healthBarUI?.UpdateHealth(0, 0);
+        Die();
         return;
     }
 
-    _partsAlive--;
     float partDamage = maxHealth * 0.15f;
     _currentHealth   = Mathf.Max(0f, _currentHealth - partDamage);
 
-    Debug.Log($"[Boss] HandlePartDestroyed: partsAlive={_partsAlive} HP={_currentHealth}");
-
     healthBarUI?.UpdateHealth(_currentHealth, _partsAlive);
 
-    fireRate      = Mathf.Max(0.3f, fireRate      - 0.08f);
-    throwCooldown = Mathf.Max(3f,   throwCooldown - 1f);
+    fireRate      = Mathf.Max(0.2f, fireRate - 0.15f);
+    throwCooldown = Mathf.Max(1.5f, throwCooldown - 1.5f);
 
-    if (_currentHealth <= 0f) { Die(); return; }
-
-    if (_cover.TryGetCoverPosition(_player.position, out Vector3 pos))
-    {
-        _state = BossState.TakingCover;
-        _cover.MoveToCover(pos);
-    }
+    StartPatrolCycle();
 }
+
     // ─────────────────────── IDamageable ─────────────────────
     public bool IsAlive => _state != BossState.Dead;
 
-   public void TakeDamage(float amount, GameObject source = null)
-{
-    if (_state == BossState.Dead) return;
-
-    float reduction = _partsAlive * 0.08f;
-    float actual    = amount * (1f - reduction);
-    _currentHealth -= actual;
-    _currentHealth  = Mathf.Max(0f, _currentHealth);
-
-    Debug.Log($"[Boss] TakeDamage: raw={amount} actual={actual} HP={_currentHealth} parts={_partsAlive}");
-
-    healthBarUI?.UpdateHealth(_currentHealth, _partsAlive);
-
-    if (_currentHealth <= 0f)
+    public void TakeDamage(float amount, GameObject source = null)
     {
-        Debug.Log("[Boss] HP reached zero — calling Die()");
-        Die();
+        if (_state == BossState.Dead) return;
+
+        float reduction = _partsAlive * 0.08f;
+        float actual    = amount * (1f - reduction);
+        _currentHealth  = Mathf.Max(0f, _currentHealth - actual);
+
+        Debug.Log($"[Boss] TakeDamage: {actual:F1} | HP={_currentHealth:F1}");
+
+        healthBarUI?.UpdateHealth(_currentHealth, _partsAlive);
+
+        if (_currentHealth <= 0f) Die();
     }
-}
-   private void Die()
-{
-    _state = BossState.Dead;
-    _agent.isStopped = true;
-    bossAnimator?.SetBool("isDead", true);
-    healthBarUI?.Hide();
-    StopBattleMusic();
 
-    Debug.Log($"[Boss] Die() called. arenaWall assigned: {arenaWall != null}");
-    arenaWall?.DeactivateWalls();
-    arenaBridge?.SpawnBridge();
+    private void Die()
+    {
+        StopAllCoroutines();
+        _state = BossState.Dead;
+        _agent.isStopped = true;
+        bossAnimator?.SetBool("isDead", true);
+        healthBarUI?.Hide();
+        StopBattleMusic();
 
-    Debug.Log("[Boss] DEFEATED.");
-}
+        arenaWall?.DeactivateWalls();
+        arenaBridge?.SpawnBridge();
+          if (elevator != null) {
+        ActivateElevator();
+    }
+
+        Debug.Log("[Boss] DEFEATED.");
+    }
+
+    // ─────────────────────── Audio ───────────────────────────
+    private void StartBattleMusic()
+    {
+        if (_battleMusicActive) return;
+        _battleMusicActive = true;
+        AudioManager.Instance?.PlayMusic(AudioManager.MusicState.Boss);
+    }
+
+    private void StopBattleMusic()
+    {
+        if (!_battleMusicActive) return;
+        _battleMusicActive = false;
+        AudioManager.Instance?.PlayMusic(AudioManager.MusicState.Main);
+    }
+
     // ─────────────────────── IResettable ─────────────────────
     public string ResettableID => gameObject.name;
 
     public void SaveInitialState() { }
 
- public void ResetState()
-{
-    Debug.Log($"[Boss] ResetState called. arenaWall={arenaWall != null} | FightStarted={FightStarted}");
-    
-    FightStarted   = false;
-    _state         = BossState.Idle;
-    _currentHealth = maxHealth;
-    _partsAlive    = 5;
-    fireRate       = 0.8f;
-    throwCooldown  = 8f;
-
-    transform.SetPositionAndRotation(_spawnPos, _spawnRot);
-    _agent.isStopped = false;
-    _agent.Warp(_spawnPos);
-
-    foreach (var part in parts) part.ResetPart();
-
-    healthBarUI?.Hide();
-    StopBattleMusic();
-    _battleMusicActive = false;
-
-    if (arenaWall != null)
+    public void ResetState()
     {
-        Debug.Log("[Boss] Calling DeactivateWalls...");
-        arenaWall.DeactivateWalls();
-    }
-    else
-    {
-        Debug.LogWarning("[Boss] arenaWall is NULL in ResetState!");
-        // Force find it directly
-        BossArenaWall wall = FindObjectOfType<BossArenaWall>();
-        if (wall != null)
+        StopAllCoroutines();
+
+        _state          = BossState.Idle;
+        FightStarted    = false;
+        _currentHealth  = maxHealth;
+        _partsAlive     = 5;
+        _partsDestroyed = 0;
+        fireRate        = 0.8f;
+        throwCooldown   = 6f;
+        _lastFireTime   = 0f;
+        _lastThrowTime  = 0f;
+        _battleMusicActive = false;
+        _currentPatrolIndex = 0;
+
+        if (_agent.isActiveAndEnabled && _agent.isOnNavMesh)
         {
-            Debug.Log("[Boss] Found wall via FindObjectOfType — deactivating.");
-            wall.DeactivateWalls();
-            arenaWall = wall; // cache it for next time
+            _agent.isStopped = true;
+            _agent.ResetPath();
         }
-        else
-        {
-            Debug.LogError("[Boss] BossArenaWall not found anywhere in scene!");
-        }
+
+        transform.SetPositionAndRotation(_spawnPos, _spawnRot);
+        _agent.Warp(_spawnPos);
+        _agent.isStopped = false;
+
+        foreach (var part in parts) part.ResetPart();
+
+        healthBarUI?.Hide();
+        StopBattleMusic();
+        arenaWall?.DeactivateWalls();
+        arenaBridge?.ResetBridge();
+
+        bossAnimator?.SetBool("isDead",    false);
+        bossAnimator?.SetBool("isWalking", false);
+
+        Debug.Log("[Boss] ResetState complete.");
     }
 
-    arenaBridge?.ResetBridge();
-
-    bossAnimator?.SetBool("isDead",    false);
-    bossAnimator?.SetBool("isWalking", false);
-}
     // ─────────────────────── Helpers ─────────────────────────
     private void FaceTarget(Vector3 target)
     {
-    // Only rotate on Y axis — prevents boss tilting forward/backward on slopes
-    Vector3 dir = target - transform.position;
-    dir.y = 0f;
-    if (dir.sqrMagnitude > 0.01f)
-        transform.rotation = Quaternion.Slerp(
-            transform.rotation,
-            Quaternion.LookRotation(dir),
-            8f * Time.deltaTime);
+        Vector3 dir = target - transform.position;
+        dir.y = 0f;
+        if (dir.sqrMagnitude > 0.01f)
+            transform.rotation = Quaternion.Slerp(
+                transform.rotation,
+                Quaternion.LookRotation(dir),
+                8f * Time.deltaTime);
     }
+   private void ActivateElevator() {
+    elevator.SetActive(true);
+    PlatformMoving plat = elevator.GetComponent<PlatformMoving>();
+    if (plat) plat.StartMovement();
+}
 }

@@ -16,5 +16,5 @@ MonoBehaviour:
   bodyText: You will find precious intel data and collectables to gather exploring
     this level.
   image: {fileID: 21300000, guid: 844377c738ef7fe429e757aec4664a85, type: 3}
-  holdDuration: 2
+  holdDuration: 1.2
   autoHideAfter: 0

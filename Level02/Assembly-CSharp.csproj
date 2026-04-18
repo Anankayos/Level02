@@ -51,6 +51,7 @@
   <ItemGroup>
     <Compile Include="Assets\Script\Enemy\BossExplosive.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\MedikitPickup.cs" />
+    <Compile Include="Assets\Script\Tutorial\ExitTrigger.cs" />
     <Compile Include="Assets\Script\Objects\Shooting\WeaponPickup.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialZone.cs" />
     <Compile Include="Assets\Script\Enemy\BossPart.cs" />
@@ -77,10 +78,12 @@
     <Compile Include="Assets\Script\Enemy\IDamageable.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialData.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialOverlayUI.cs" />
+    <Compile Include="Assets\Script\Objects\PlatformMoving.cs" />
     <Compile Include="Assets\Script\Objects\Shooting\Bullet.cs" />
     <Compile Include="Assets\Script\Player\CameraAimController.cs" />
     <Compile Include="Assets\Script\Enemy\EnemyAI.cs" />
     <Compile Include="Assets\Script\Objects\CollectWeapon\DestructibleSurface.cs" />
+    <Compile Include="Assets\Script\Objects\ElevatorTrigger.cs" />
     <Compile Include="Assets\Script\Audio\FootstepSFX.cs" />
     <Compile Include="Assets\Script\Enemy\BossCoverSystem.cs" />
     <Compile Include="Assets\UnityAssetProj\StarterAssets\Mobile\Scripts\VirtualInputs\UIVirtualTouchZone.cs" />

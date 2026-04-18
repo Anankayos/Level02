@@ -16,5 +16,5 @@ MonoBehaviour:
   bodyText: Keys allow to proceed in sealed areas, highlited with the same color
     of the key.
   image: {fileID: 21300000, guid: 62b35a8a72c71c444936cf27808e85eb, type: 3}
-  holdDuration: 2
+  holdDuration: 1.2
   autoHideAfter: 0

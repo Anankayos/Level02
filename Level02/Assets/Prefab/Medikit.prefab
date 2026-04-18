@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 5775308901883447294}
   - component: {fileID: 3833513130892114853}
   - component: {fileID: -9145053748651316568}
+  - component: {fileID: 8474150864124159582}
   m_Layer: 0
   m_Name: Medikit
   m_TagString: Untagged
@@ -68,7 +69,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 7dac3595db409534e887253bb04379db, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -130,5 +131,17 @@ MonoBehaviour:
   rotationSpeed: 60
   phaseOffset: 0
   playerTag: Player
-  healAmount: 30
+  healAmount: 50
   skipIfFull: 1
+--- !u!114 &8474150864124159582
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8899972703353957478}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b30a37450f85d2f45a4a4c8fa0eb5feb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PersistentPickup

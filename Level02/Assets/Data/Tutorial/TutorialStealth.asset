@@ -16,5 +16,5 @@ MonoBehaviour:
   bodyText: Pressing C you are able to crouch. Use this to avoid enemy sight and
     hide. Press E while crouching to kill enemies from behind.
   image: {fileID: 21300000, guid: 38809267458baf54b86a60af51f62f28, type: 3}
-  holdDuration: 2
+  holdDuration: 1.2
   autoHideAfter: 0

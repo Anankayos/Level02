@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 592047705866957136}
   - component: {fileID: 8467407233726115914}
   - component: {fileID: 9031736715709808699}
+  - component: {fileID: 9171568347244597043}
   m_Layer: 6
   m_Name: PillarDestructible
   m_TagString: Untagged
@@ -131,3 +132,16 @@ MonoBehaviour:
   destroyedVersionPrefab: {fileID: 0}
   destructionVFX: {fileID: 0}
   impactNoiseRadius: 6
+--- !u!114 &9171568347244597043
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7546080600626442835}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b30a37450f85d2f45a4a4c8fa0eb5feb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PersistentPickup
+  alwaysRespawn: 1

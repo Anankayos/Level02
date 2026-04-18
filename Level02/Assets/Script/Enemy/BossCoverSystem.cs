@@ -1,54 +1,59 @@
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AI;
 
 public class BossCoverSystem : MonoBehaviour
 {
-    [Tooltip("Tag all pillar GameObjects with 'CoverPoint' and add a child Transform named 'CoverSpot'")]
-    [SerializeField] private float coverSearchRadius = 25f;
-    [SerializeField] private float minCoverDistance  = 3f;   // don't pick cover too close to player
-    [SerializeField] private LayerMask obstacleMask;
+    [Header("Drag all 5 cover point Transforms here")]
+    [SerializeField] private Transform[] coverPoints;
 
-    private NavMeshAgent _agent;
+    private int _lastCoverIndex = -1;
 
-    private void Awake() => _agent = GetComponent<NavMeshAgent>();
-
-    /// <summary>Returns the best cover position hiding from the target, or Vector3.zero if none found.</summary>
-    public bool TryGetCoverPosition(Vector3 threatPos, out Vector3 coverPos)
+    // Returns a cover position that is NOT the current one
+    // and is occluded from the player
+    public bool TryGetCoverPosition(Vector3 playerPos, out Vector3 result)
     {
-        coverPos = Vector3.zero;
-        var candidates = new List<Transform>();
+        result = Vector3.zero;
 
-        // Find all cover-tagged objects in radius
-        Collider[] cols = Physics.OverlapSphere(transform.position, coverSearchRadius);
-        foreach (var col in cols)
+        if (coverPoints == null || coverPoints.Length == 0)
         {
-            if (!col.CompareTag("CoverPoint")) continue;
-            Transform spot = col.transform.Find("CoverSpot") ?? col.transform;
-            candidates.Add(spot);
+            Debug.LogWarning("[BossCoverSystem] No cover points assigned!");
+            return false;
         }
 
-        float bestScore = float.MaxValue;
-        foreach (var spot in candidates)
+        // Build shuffled list excluding last used cover
+        int best      = -1;
+        float bestDot = float.MaxValue;
+
+        for (int i = 0; i < coverPoints.Length; i++)
         {
-            float distToThreat = Vector3.Distance(spot.position, threatPos);
-            if (distToThreat < minCoverDistance) continue;
+            if (i == _lastCoverIndex) continue;
+            if (coverPoints[i] == null) continue;
 
-            // Prefer spots where the pillar blocks line-of-sight to the player
-            bool lineBlocked = Physics.Linecast(spot.position + Vector3.up, threatPos + Vector3.up, obstacleMask);
-            float score = lineBlocked
-                        ? Vector3.Distance(transform.position, spot.position)       // near + blocked → best
-                        : Vector3.Distance(transform.position, spot.position) + 50f; // penalise exposed
+            // Prefer cover points that are most "behind" something from player's view
+            Vector3 toPoint = (coverPoints[i].position - playerPos).normalized;
+            float   dot     = Vector3.Dot(toPoint, Vector3.up); // rough occlusion heuristic
 
-            if (score < bestScore)
+            // Pick the point farthest from player but not the same as last
+            float dist = Vector3.Distance(playerPos, coverPoints[i].position);
+            if (dist > bestDot)
             {
-                bestScore = score;
-                coverPos  = spot.position;
+                bestDot = dist;
+                best    = i;
             }
         }
 
-        return bestScore < float.MaxValue;
+        if (best < 0) best = 0; // fallback to first point
+
+        _lastCoverIndex = best;
+        result          = coverPoints[best].position;
+        return true;
     }
 
-    public void MoveToCover(Vector3 coverPos) => _agent.SetDestination(coverPos);
+    public void MoveToCover(Vector3 pos)
+    {
+        var agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+        if (agent != null && agent.isActiveAndEnabled && agent.isOnNavMesh)
+            agent.SetDestination(pos);
+    }
+
+    public void Reset() => _lastCoverIndex = -1;
 }

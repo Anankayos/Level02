@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 4882287013350276185}
   - component: {fileID: 5280089139263782998}
   - component: {fileID: 3705544957323247837}
+  - component: {fileID: -3072401165411587492}
   m_Layer: 6
   m_Name: CoverDistructible
   m_TagString: Untagged
@@ -129,3 +130,16 @@ MonoBehaviour:
   destroyedVersionPrefab: {fileID: 0}
   destructionVFX: {fileID: 0}
   impactNoiseRadius: 6
+--- !u!114 &-3072401165411587492
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3641647425363662904}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b30a37450f85d2f45a4a4c8fa0eb5feb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PersistentPickup
+  alwaysRespawn: 1

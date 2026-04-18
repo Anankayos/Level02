@@ -10,11 +10,13 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 83f94e1dcb4f82d4099969fe7d552678, type: 3}
-  m_Name: TutorialRifle
+  m_Name: Inel 4
   m_EditorClassIdentifier: Assembly-CSharp::TutorialData
   tutorialType: 1
-  bodyText: To aim with your gun hold RightMouse Button, to fire hold Left Mouse
-    Button. Try to shoot the orange section of the pillar.
-  image: {fileID: 21300000, guid: 50168c3b7b20e91498cd30e8e0e4db67, type: 3}
-  holdDuration: 1.2
+  bodyText: "Tank god i am close to the exit, i have so much hunger that i can barely
+    see. Thank good when the mission will be over, i'll be one of the first to \nleave. 
+    -this was written by the guard on your left, who has a sight inferior to the
+    others)-"
+  image: {fileID: 0}
+  holdDuration: 1
   autoHideAfter: 0
