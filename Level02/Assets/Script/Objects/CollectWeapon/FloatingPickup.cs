@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public abstract class FloatingPickup : MonoBehaviour
+public abstract class FloatingPickup : MonoBehaviour, IResettable
 {
     [Header("Float Animation")]
     [SerializeField] private float floatAmplitude = 0.25f;   // vertical travel range
@@ -34,29 +34,42 @@ public abstract class FloatingPickup : MonoBehaviour
         // Spin
         transform.Rotate(Vector3.up, rotationSpeed * Time.deltaTime, Space.World);
     }
+
     // Called by Unity's physics system when player walks over the trigger collider
     private void OnTriggerEnter(Collider other)
     {
         if (!other.CompareTag(playerTag)) return;
         OnPickedUp(other.gameObject);
     }
-    private string _pickupID;
-public string ResettableID =>
-    string.IsNullOrEmpty(_pickupID)
-        ? (_pickupID = System.Guid.NewGuid().ToString())
-        : _pickupID;
 
-public virtual void SaveInitialState() { }
-public virtual void ResetState() => gameObject.SetActive(true);
+    // ── IResettable ───────────────────────────────────────────
+    private string _pickupID;
+    public string ResettableID =>
+        string.IsNullOrEmpty(_pickupID)
+            ? (_pickupID = System.Guid.NewGuid().ToString())
+            : _pickupID;
+
+    public virtual void SaveInitialState() { }
+
+    public virtual void ResetState()
+    {
+        // Re-enable the pickup so it is visible and collectable again after a
+        // checkpoint reload. The CheckpointManager's persistent-IDs pass will
+        // immediately call SetActive(false) again for any item that was already
+        // collected BEFORE the checkpoint was saved, so those stay gone.
+        gameObject.SetActive(true);
+    }
+
+    // ─────────────────────────────────────────────────────────
 
     // Each subclass defines what happens on pickup
     protected abstract void OnPickedUp(GameObject player);
 
     // Call this at the end of OnPickedUp to remove the item from the world
     protected void DestroyPickup()
-{
-    SceneStateTracker.Instance?.RegisterDestroyed(ResettableID);
-    // TODO: Instantiate particle VFX here
-    gameObject.SetActive(false); // SetActive keeps IResettable alive for resets
-}
+    {
+        SceneStateTracker.Instance?.RegisterDestroyed(ResettableID);
+        // TODO: Instantiate particle VFX here
+        gameObject.SetActive(false); // SetActive keeps IResettable alive for resets
+    }
 }
