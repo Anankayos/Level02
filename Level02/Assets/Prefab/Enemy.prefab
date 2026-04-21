@@ -464,6 +464,9 @@ MonoBehaviour:
   bulletPrefab: {fileID: 3107345626525647907, guid: 5d237c76cf0c0394c808fba2b6c75aaa, type: 3}
   accuracy: 0.7
   maxFloorHeightDiff: 2.5
+  shootMask:
+    serializedVersion: 2
+    m_Bits: 123
   waypoints:
   - {fileID: 0}
   - {fileID: 0}
