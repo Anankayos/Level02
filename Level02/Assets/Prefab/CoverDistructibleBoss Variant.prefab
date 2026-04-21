@@ -91,7 +91,8 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: -3072401165411587492, guid: dc24d63f750e5024da54e282587217e6, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: 8926831038383826014, guid: dc24d63f750e5024da54e282587217e6, type: 3}
@@ -101,9 +102,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 3641647425363662904, guid: dc24d63f750e5024da54e282587217e6, type: 3}
       insertIndex: -1
       addedObject: {fileID: 2837983159955690414}
-    - targetCorrespondingSourceObject: {fileID: 3641647425363662904, guid: dc24d63f750e5024da54e282587217e6, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: -3040275424551011556}
   m_SourcePrefab: {fileID: 100100000, guid: dc24d63f750e5024da54e282587217e6, type: 3}
 --- !u!4 &1318033217453771148 stripped
 Transform:
@@ -131,16 +129,3 @@ NavMeshObstacle:
   m_CarveOnlyStationary: 1
   m_Center: {x: 0, y: 0, z: 0}
   m_TimeToStationary: 0.5
---- !u!114 &-3040275424551011556
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 6566629478384514538}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b30a37450f85d2f45a4a4c8fa0eb5feb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PersistentPickup
-  alwaysRespawn: 0
