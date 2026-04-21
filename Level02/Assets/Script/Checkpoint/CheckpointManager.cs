@@ -67,6 +67,8 @@ public class CheckpointManager : MonoBehaviour
             }
         }
 
+        // Snapshot ONLY the destructions that happened at or before this checkpoint.
+        // Post-checkpoint destructions must NOT bleed into this set.
         SceneStateTracker sst = SceneStateTracker.Instance;
         if (sst != null)
             _saved.persistentIDs = new HashSet<string>(sst.DestroyedIDs);
@@ -92,16 +94,25 @@ public class CheckpointManager : MonoBehaviour
 
     IEnumerator LoadRoutine()
     {
-        // Phase 1: Reset ALL IResettable objects including boss
-        foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+        // ── FIX: Roll SceneStateTracker back to the checkpoint snapshot ──
+        // Without this, IDs of items destroyed AFTER the save pollute
+        // _destroyedIDs and cause Phase 2 to re-suppress them on every
+        // respawn, making medikits / weapons never reappear.
+        SceneStateTracker.Instance?.RestoreSnapshot(
+            new HashSet<string>(_saved.persistentIDs));
+
+        // Phase 1: Reset ALL IResettable objects
+        foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(
+                     FindObjectsInactive.Include, FindObjectsSortMode.None))
             if (mb is IResettable r) r.ResetState();
 
         yield return new WaitForEndOfFrame();
 
-        // Phase 2: Re-apply persistent destructions
+        // Phase 2: Re-suppress objects that were already gone AT save time
         if (_saved.persistentIDs != null && _saved.persistentIDs.Count > 0)
         {
-            foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+            foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(
+                         FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
                 if (mb is IResettable r && _saved.persistentIDs.Contains(r.ResettableID))
                 {
