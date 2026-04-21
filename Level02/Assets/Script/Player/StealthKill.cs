@@ -5,11 +5,12 @@ public class StealthKill : MonoBehaviour
 {
     [Header("Detection")]
     [Tooltip("Max distance to perform a stealth kill.")]
-    public float killRange      = 2.0f;
+    public float killRange = 2.0f;
 
-    [Tooltip("Max angle (degrees) between player forward and enemy direction. " +
-             "180 = any direction (front AND back kill). 90 = front half only.")]
-    public float angleThreshold = 180f;
+    [Tooltip(
+        "Max angle from directly behind the enemy (0 = exactly behind, 90 = side, 180 = any direction).\n" +
+        "130 is a good default: forgiving rear arc without allowing frontal kills.")]
+    public float behindAngle = 130f;
 
     [Header("Crouch Check")]
     [Tooltip("Animator bool parameter name that represents crouching.")]
@@ -27,16 +28,44 @@ public class StealthKill : MonoBehaviour
     public LayerMask enemyLayer;
 
     // ── Runtime ───────────────────────────────────────────────
-    private Animator    _animator;
+    private Animator     _animator;
     private PlayerHealth _health;
-    private EnemyAI     _currentTarget;
+    private EnemyAI      _currentTarget;
 
+    // Cached hash for crouch param — set in Start(), never loops at runtime
+    private int  _crouchHash;
+    private bool _crouchParamExists;
+
+    // ─────────────────────────────────────────────────────────
     void Awake()
     {
         _animator = GetComponent<Animator>();
         _health   = GetComponent<PlayerHealth>();
     }
 
+    void Start()
+    {
+        // Cache crouch parameter once — O(1) lookup every frame afterwards
+        _crouchParamExists = false;
+        if (_animator != null)
+        {
+            foreach (var p in _animator.parameters)
+            {
+                if (p.name == crouchAnimParam && p.type == AnimatorControllerParameterType.Bool)
+                {
+                    _crouchHash        = Animator.StringToHash(crouchAnimParam);
+                    _crouchParamExists = true;
+                    break;
+                }
+            }
+
+            if (!_crouchParamExists)
+                Debug.LogWarning($"[StealthKill] Animator parameter '{crouchAnimParam}' not found. "
+                               + "Set 'forceCrouchAlwaysOn = true' to skip the crouch check.");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
     void Update()
     {
         if (_health != null && _health.IsDead) { HidePrompt(); return; }
@@ -47,7 +76,7 @@ public class StealthKill : MonoBehaviour
         {
             ShowPrompt();
 
-            // E key or Gamepad South (cross/A)
+            // E key or Gamepad South (cross / A)
             bool pressed = Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
             if (!pressed && Gamepad.current != null)
                 pressed = Gamepad.current.buttonSouth.wasPressedThisFrame;
@@ -66,21 +95,28 @@ public class StealthKill : MonoBehaviour
     {
         if (!IsCrouching()) return null;
 
-        // Sphere overlap to find nearby enemies
         Collider[] hits = Physics.OverlapSphere(transform.position, killRange, enemyLayer);
 
-        EnemyAI best      = null;
-        float   bestDist  = float.MaxValue;
+        EnemyAI best     = null;
+        float   bestDist = float.MaxValue;
 
         foreach (var col in hits)
         {
             EnemyAI enemy = col.GetComponentInParent<EnemyAI>();
-            if (enemy == null || !enemy.IsAlive || enemy.IsAlerted) continue;
 
-            // Angle check
-            Vector3 toEnemy = (enemy.transform.position - transform.position).normalized;
-            float   angle   = Vector3.Angle(transform.forward, toEnemy);
-            if (angle > angleThreshold * 0.5f) continue;
+            // Skip dead enemies only — Patrol, Suspicious, Search AND Combat/Melee
+            // are all valid kill targets. IsAlerted (Combat/Melee) is NOT a blocker
+            // because once triggered it stays active for the enemy's lifetime.
+            if (enemy == null || !enemy.IsAlive) continue;
+
+            // ── Behind-enemy angle check ──────────────────────────────────
+            // We measure from the ENEMY's forward to the vector pointing at the PLAYER.
+            // angleToBack == 0   → player is directly behind the enemy
+            // angleToBack == 180 → player is directly in front of the enemy
+            // We allow the kill when angleToBack <= behindAngle.
+            Vector3 toPlayer    = (transform.position - enemy.transform.position).normalized;
+            float   angleToBack = Vector3.Angle(enemy.transform.forward, toPlayer);
+            if (angleToBack < (180f - behindAngle)) continue;
 
             float dist = Vector3.Distance(transform.position, enemy.transform.position);
             if (dist < bestDist)
@@ -89,22 +125,22 @@ public class StealthKill : MonoBehaviour
                 best     = enemy;
             }
         }
+
         return best;
     }
 
+    // ─────────────────────────────────────────────────────────
     void PerformKill(EnemyAI enemy)
     {
         if (enemy == null) return;
 
-        // Face the enemy smoothly
-        Vector3 dir = (enemy.transform.position - transform.position);
+        // Face the enemy
+        Vector3 dir = enemy.transform.position - transform.position;
         dir.y = 0f;
         if (dir != Vector3.zero)
             transform.rotation = Quaternion.LookRotation(dir);
 
-        // Trigger player animation (optional)
         _animator?.SetTrigger("StealthKill");
-
         enemy.ExecuteStealthKill();
         HidePrompt();
         Debug.Log($"[StealthKill] Executed on {enemy.name}");
@@ -113,20 +149,11 @@ public class StealthKill : MonoBehaviour
     // ─────────────────────────────────────────────────────────
     bool IsCrouching()
     {
-        if (forceCrouchAlwaysOn) return true;
-        if (_animator == null) return false;
+        if (forceCrouchAlwaysOn)    return true;
+        if (_animator == null)      return false;
+        if (!_crouchParamExists)    return false;
 
-        // Try to read the Crouch bool from the animator
-        foreach (var p in _animator.parameters)
-        {
-            if (p.name == crouchAnimParam && p.type == AnimatorControllerParameterType.Bool)
-                return _animator.GetBool(crouchAnimParam);
-        }
-
-        // Parameter not found — log once, then return false
-        Debug.LogWarning($"[StealthKill] Animator parameter '{crouchAnimParam}' not found. " +
-                         "Set 'forceCrouchAlwaysOn = true' to skip crouch check.");
-        return false;
+        return _animator.GetBool(_crouchHash);
     }
 
     void ShowPrompt() { if (promptUI != null) promptUI.SetActive(true); }
