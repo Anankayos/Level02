@@ -23,7 +23,6 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
     private GameObject _spawnedRubble;
     private PersistentPickup _persistent;
 
-    // ── IResettable ───────────────────────────────────────────
     public string ResettableID => GetScenePath();
 
     private string GetScenePath()
@@ -36,16 +35,12 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
 
     public bool IsAlive => !_isDestroyed;
 
-    // ── Unity Messages ────────────────────────────────────────
-
     private void Awake()
     {
         _health     = maxHealth;
         _persistent = GetComponent<PersistentPickup>();
         SaveInitialState();
     }
-
-    // ── Damage ──────────────────────────────────────────────
 
     public void TakeDamage(float amount, GameObject source = null)
     {
@@ -60,11 +55,22 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
     {
         _isDestroyed = true;
 
-        // Register DS: path so Phase 2 can match this object
+        // Always register in SceneStateTracker (tracks current session state)
         SceneStateTracker.Instance?.RegisterDestroyed(ResettableID);
 
-        // If permanent, also register PP: path via PersistentPickup
-        _persistent?.Collect();
+        if (_persistent != null)
+        {
+            // Permanent barrier: also register PP: path in tracker
+            _persistent.Collect();
+
+            // KEY FIX: write BOTH IDs directly into the saved checkpoint
+            // state so they survive even if no new checkpoint is hit after
+            // this destruction. Without this, a destruction that happens
+            // after the last checkpoint save is invisible to LoadRoutine
+            // Phase 2 and the object respawns.
+            CheckpointManager.Instance?.RegisterPersistentDestruction(ResettableID);
+            CheckpointManager.Instance?.RegisterPersistentDestruction(_persistent.ResettableID);
+        }
 
         if (spawnVFX && destructionVFX)
             Instantiate(destructionVFX, transform.position, transform.rotation);
@@ -77,7 +83,7 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
 
     /// <summary>
     /// Silent re-suppress called by CheckpointManager Phase 2.
-    /// Restores destroyed visual state WITHOUT touching SceneStateTracker.
+    /// Does NOT write to SceneStateTracker.
     /// </summary>
     public void Suppress()
     {
@@ -90,10 +96,7 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
         gameObject.SetActive(false);
     }
 
-    // Legacy path kept for any existing callers outside LoadRoutine
     public void ForceDestroy() => Suppress();
-
-    // ── IResettable ───────────────────────────────────────────
 
     public void SaveInitialState() { }
 

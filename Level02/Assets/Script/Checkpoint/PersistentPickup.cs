@@ -3,7 +3,6 @@ using UnityEngine;
 
 public class PersistentPickup : MonoBehaviour, IResettable
 {
-    // ── IResettable ───────────────────────────────────────────
     public string ResettableID => GetScenePath();
 
     private string GetScenePath()
@@ -14,12 +13,8 @@ public class PersistentPickup : MonoBehaviour, IResettable
         return "PP:" + path;
     }
 
-    // ── State ─────────────────────────────────────────────────
     private bool _collected;
-
     public event Action OnPickedUp;
-
-    // ── Public API ───────────────────────────────────────────
 
     /// <summary>Mark as permanently collected (player just picked it up).</summary>
     public void Collect()
@@ -27,22 +22,21 @@ public class PersistentPickup : MonoBehaviour, IResettable
         if (_collected) return;
         _collected = true;
         SceneStateTracker.Instance?.RegisterDestroyed(ResettableID);
+
+        // KEY FIX: write directly into the saved checkpoint so this item
+        // stays gone even if no new checkpoint is reached after collection.
+        CheckpointManager.Instance?.RegisterPersistentDestruction(ResettableID);
+
         OnPickedUp?.Invoke();
         Debug.Log($"[PersistentPickup] '{name}' collected — ID: {ResettableID}");
     }
 
-    /// <summary>
-    /// Silent re-suppress called by CheckpointManager Phase 2.
-    /// Does NOT touch SceneStateTracker — the tracker was already
-    /// restored to the checkpoint snapshot before Phase 1 ran.
-    /// </summary>
+    /// <summary>Silent re-suppress by CheckpointManager Phase 2. No tracker writes.</summary>
     public void Suppress()
     {
         _collected = true;
         gameObject.SetActive(false);
     }
-
-    // ── IResettable ───────────────────────────────────────────
 
     public void SaveInitialState() { }
 
