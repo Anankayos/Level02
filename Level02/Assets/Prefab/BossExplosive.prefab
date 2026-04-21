@@ -153,9 +153,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b4bc902459db4ad49841f7610b083341, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BossExplosive
-  fuseTime: 3
+  fuseTime: 4
   damage: 30
-  explosionRadius: 3
+  explosionRadius: 2
   damageLayer:
     serializedVersion: 2
     m_Bits: 4294967295
