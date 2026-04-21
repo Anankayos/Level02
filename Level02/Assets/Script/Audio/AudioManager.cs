@@ -20,25 +20,44 @@ public class AudioManager : MonoBehaviour
     public enum MusicState { Main, Battle, Boss }
     private MusicState _currentState;
 
+    // FIX: track whether this instance is still alive
+    // OnDestroy sets this to false so no coroutine is started on a dead object
+    private bool _isAlive = false;
+
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        _isAlive = true;
 
         for (int i = 0; i < 2; i++)
         {
             _sources[i] = gameObject.AddComponent<AudioSource>();
-            _sources[i].loop = true;
+            _sources[i].loop        = true;
             _sources[i].playOnAwake = false;
-            _sources[i].volume = 0f;
+            _sources[i].volume      = 0f;
         }
     }
 
     void Start() => PlayMusic(MusicState.Main);
 
+    // FIX: clear Instance and flag on destroy so callers that hold a cached
+    // reference (e.g. EnemyAI.OnDestroy during scene unload) get a hard null
+    // and cannot start coroutines on a destroyed MonoBehaviour.
+    void OnDestroy()
+    {
+        _isAlive = false;
+        if (Instance == this)
+            Instance = null;
+    }
+
     public void PlayMusic(MusicState state)
     {
+        // FIX: guard against being called while destroyed (scene unload race).
+        // _isAlive is cheaper than Unity's == null override on every call.
+        if (!_isAlive) return;
+
         if (_currentState == state && _sources[_activeSource].isPlaying) return;
         _currentState = state;
 
