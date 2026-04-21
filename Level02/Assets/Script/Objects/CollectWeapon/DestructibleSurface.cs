@@ -1,16 +1,11 @@
 using UnityEngine;
 
 /// <summary>
-/// Destructible prop that integrates with the checkpoint reset system.
+/// Destructible prop integrated with the checkpoint reset system.
 ///
-/// Respawn behaviour is controlled by whether a PersistentPickup component
-/// is attached to the same GameObject:
-///
-///   NO  PersistentPickup  →  resettable prop (crate, glass, vent...)
-///                            Respawns every time the player loads a checkpoint.
-///
-///   YES PersistentPickup  →  one-way permanent barrier (pillar, sealed door...)
-///                            Once broken it stays broken, exactly like a key pickup.
+/// Respawn behaviour is controlled by whether a PersistentPickup is attached:
+///   NO  PersistentPickup  →  resettable prop  →  respawns on checkpoint reload
+///   YES PersistentPickup  →  permanent barrier →  stays broken forever
 /// </summary>
 [RequireComponent(typeof(Collider))]
 public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
@@ -26,12 +21,9 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
     private float      _health;
     private bool       _isDestroyed;
     private GameObject _spawnedRubble;
-
-    // Cached reference — set in Awake, never changes
     private PersistentPickup _persistent;
 
     // ── IResettable ───────────────────────────────────────────
-    // Stable scene-path ID so save/load IDs always match.
     public string ResettableID => GetScenePath();
 
     private string GetScenePath()
@@ -64,20 +56,14 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
         if (_health <= 0f) BreakApart(spawnVFX: true);
     }
 
-    // Called silently on checkpoint restore — no VFX, no sound
-    public void ForceDestroy() => BreakApart(spawnVFX: false);
-
     private void BreakApart(bool spawnVFX)
     {
         _isDestroyed = true;
 
-        // Register in SceneStateTracker so CheckpointManager Phase 2 can
-        // re-suppress this object if it was already broken at save time.
+        // Register DS: path so Phase 2 can match this object
         SceneStateTracker.Instance?.RegisterDestroyed(ResettableID);
 
-        // If a PersistentPickup is attached, mark it collected too so its
-        // PP: ID also lands in SceneStateTracker and Phase 2 suppresses it
-        // via both IResettable components.
+        // If permanent, also register PP: path via PersistentPickup
         _persistent?.Collect();
 
         if (spawnVFX && destructionVFX)
@@ -89,15 +75,30 @@ public class DestructibleSurface : MonoBehaviour, IDamageable, IResettable
         gameObject.SetActive(false);
     }
 
+    /// <summary>
+    /// Silent re-suppress called by CheckpointManager Phase 2.
+    /// Restores destroyed visual state WITHOUT touching SceneStateTracker.
+    /// </summary>
+    public void Suppress()
+    {
+        _isDestroyed = true;
+
+        if (_spawnedRubble == null && destroyedVersionPrefab)
+            _spawnedRubble = Instantiate(destroyedVersionPrefab, transform.position, transform.rotation);
+
+        _persistent?.Suppress();
+        gameObject.SetActive(false);
+    }
+
+    // Legacy path kept for any existing callers outside LoadRoutine
+    public void ForceDestroy() => Suppress();
+
     // ── IResettable ───────────────────────────────────────────
 
     public void SaveInitialState() { }
 
     public void ResetState()
     {
-        // Persistent surfaces (PersistentPickup attached) rely entirely on
-        // Phase 2 ID matching to stay suppressed — we still re-enable here
-        // so Phase 2 gets a live object to work with.
         _isDestroyed = false;
         _health      = maxHealth;
 
