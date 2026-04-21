@@ -15,7 +15,7 @@ GameObject:
   - component: {fileID: -8563452083504878935}
   - component: {fileID: 1190686096535672799}
   m_Layer: 0
-  m_Name: Bomb
+  m_Name: BossExplosive
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -69,7 +69,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 4e33894d901b8d4469a8a9445a8df48d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -154,9 +154,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::BossExplosive
   fuseTime: 3
-  blastRadius: 4
-  blastDamage: 35
-  damageMask:
+  damage: 30
+  explosionRadius: 3
+  damageLayer:
     serializedVersion: 2
-    m_Bits: 1
+    m_Bits: 4294967295
+  arcHeight: 4
   explosionVFX: {fileID: 0}
