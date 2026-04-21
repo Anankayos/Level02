@@ -29,10 +29,6 @@ public class CheckpointManager : MonoBehaviour
         Instance = this;
     }
 
-    // ══════════════════════════════════════════════════════════
-    // SAVE
-    // ══════════════════════════════════════════════════════════
-
     public void SaveCheckpoint(Vector3 position, Quaternion rotation)
     {
         _saved.respawnPosition = position;
@@ -57,13 +53,14 @@ public class CheckpointManager : MonoBehaviour
         if (sst != null)
             _saved.persistentIDs = new HashSet<string>(sst.DestroyedIDs);
 
-        GameEvents.FireCheckpointReached("Checkpoint Saved");
-        Debug.Log($"[CheckpointManager] Saved at {position} | HP={_saved.playerHealth:F0} | Ammo={_saved.primaryAmmo}");
-    }
+        // DEBUG: print every ID saved into persistentIDs
+        Debug.Log($"[CheckpointManager] SAVE — {_saved.persistentIDs.Count} persistent IDs:");
+        foreach (var id in _saved.persistentIDs)
+            Debug.Log($"  SAVED ID: {id}");
 
-    // ══════════════════════════════════════════════════════════
-    // LOAD
-    // ══════════════════════════════════════════════════════════
+        GameEvents.FireCheckpointReached("Checkpoint Saved");
+        Debug.Log($"[CheckpointManager] Saved at {position} | HP={_saved.playerHealth:F0}");
+    }
 
     public void LoadCheckpoint()
     {
@@ -73,29 +70,37 @@ public class CheckpointManager : MonoBehaviour
 
     IEnumerator LoadRoutine()
     {
-        // Step 0: Restore tracker to the exact snapshot taken at save time.
-        // This prevents post-checkpoint destructions from bleeding into
-        // the persistent set and blocking respawns on the next reload.
         SceneStateTracker.Instance?.RestoreSnapshot(
             new HashSet<string>(_saved.persistentIDs));
 
-        // Phase 1: Reset ALL IResettable objects (sets everything active/alive)
+        // DEBUG: confirm what IDs we are trying to suppress
+        Debug.Log($"[CheckpointManager] LOAD — will suppress {_saved.persistentIDs.Count} IDs:");
+        foreach (var id in _saved.persistentIDs)
+            Debug.Log($"  SUPPRESS ID: {id}");
+
+        // Phase 1: Reset ALL IResettable objects
         foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(
                      FindObjectsInactive.Include, FindObjectsSortMode.None))
             if (mb is IResettable r) r.ResetState();
 
         yield return new WaitForEndOfFrame();
 
-        // Phase 2: Re-suppress objects that were already gone AT save time.
-        // Uses Suppress() instead of ForceDestroy() / SetActive(false) so
-        // we NEVER write back to SceneStateTracker — the tracker stays clean.
+        // Phase 2: Re-suppress objects that were already gone AT save time
         if (_saved.persistentIDs != null && _saved.persistentIDs.Count > 0)
         {
             foreach (var mb in Object.FindObjectsByType<MonoBehaviour>(
                          FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
                 if (!(mb is IResettable r)) continue;
-                if (!_saved.persistentIDs.Contains(r.ResettableID)) continue;
+
+                string foundID = r.ResettableID;
+                bool matched = _saved.persistentIDs.Contains(foundID);
+
+                // DEBUG: log every IResettable found and whether it matched
+                if (mb is DestructibleSurface || mb is PersistentPickup || mb is KeyPickup)
+                    Debug.Log($"  FOUND [{mb.GetType().Name}] '{mb.name}' ID='{foundID}' matched={matched}");
+
+                if (!matched) continue;
 
                 if      (mb is DestructibleSurface ds) ds.Suppress();
                 else if (mb is EnemyAI             ec) ec.ForceKill();
@@ -105,23 +110,13 @@ public class CheckpointManager : MonoBehaviour
         }
 
         yield return new WaitForEndOfFrame();
-
-        // Phase 3: Restore player
         RestorePlayer();
     }
-
-    // ══════════════════════════════════════════════════════════
-    // RESTORE PLAYER
-    // ══════════════════════════════════════════════════════════
 
     void RestorePlayer()
     {
         GameObject playerGO = GameObject.FindWithTag("Player");
-        if (playerGO == null)
-        {
-            Debug.LogError("[CheckpointManager] No GameObject tagged 'Player' found.");
-            return;
-        }
+        if (playerGO == null) { Debug.LogError("[CheckpointManager] No GameObject tagged 'Player' found."); return; }
 
         CharacterController cc = playerGO.GetComponentInChildren<CharacterController>();
         if (cc != null) cc.enabled = false;
@@ -129,8 +124,7 @@ public class CheckpointManager : MonoBehaviour
         if (cc != null) cc.enabled = true;
 
         PlayerHealth ph = playerGO.GetComponentInChildren<PlayerHealth>();
-        if (ph != null)
-            ph.SetHealth(_saved.playerHealth > 0f ? _saved.playerHealth : ph.MaxHealth);
+        if (ph != null) ph.SetHealth(_saved.playerHealth > 0f ? _saved.playerHealth : ph.MaxHealth);
 
         var movement = playerGO.GetComponentInChildren<StarterAssets.ThirdPersonController>();
         var combat   = playerGO.GetComponentInChildren<PlayerCombat>();
@@ -148,10 +142,6 @@ public class CheckpointManager : MonoBehaviour
         ph?.OnRespawned?.Invoke();
         Debug.Log($"[CheckpointManager] Loaded. Player → {_saved.respawnPosition} | HP={_saved.playerHealth:F0}");
     }
-
-    // ══════════════════════════════════════════════════════════
-    // HELPERS
-    // ══════════════════════════════════════════════════════════
 
     PlayerHealth FindPlayerHealth()
     {
