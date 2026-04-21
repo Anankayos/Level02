@@ -81,18 +81,17 @@ public class StealthKillDetector : MonoBehaviour
         foreach (var col in hits)
         {
             EnemyAI enemy = col.GetComponentInParent<EnemyAI>();
-            if (enemy == null || !enemy.IsAlive || enemy.IsAlerted) continue;
+            if (enemy == null || !enemy.IsAlive) continue;
 
             // Must be approaching from behind the enemy
             Vector3 toPlayer    = (transform.position - enemy.transform.position).normalized;
             float   angleToBack = Vector3.Angle(enemy.transform.forward, toPlayer);
             if (angleToBack < (180f - behindAngle)) continue;
 
-            // ── BUG FIX: always update bestDist when closer enemy found ──
             float dist = Vector3.Distance(transform.position, enemy.transform.position);
             if (dist < bestDist)
             {
-                bestDist = dist;   // was: bestDist = best == null ? dist : bestDist
+                bestDist = dist;
                 best     = enemy;
             }
         }
