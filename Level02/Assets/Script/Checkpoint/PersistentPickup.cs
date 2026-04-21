@@ -3,59 +3,47 @@ using UnityEngine;
 
 public class PersistentPickup : MonoBehaviour, IResettable
 {
-    // ── IResettable ───────────────────────────────────────────
-    private string _id;
-    public string ResettableID =>
-        string.IsNullOrEmpty(_id) ? (_id = Guid.NewGuid().ToString()) : _id;
+    public string ResettableID => GetScenePath();
 
-    // ── State ─────────────────────────────────────────────────
+    private string GetScenePath()
+    {
+        var t = transform;
+        string path = t.name;
+        while (t.parent != null) { t = t.parent; path = t.name + "/" + path; }
+        return "PP:" + path;
+    }
+
     private bool _collected;
-
-    // Optional: called after collection (wire in Inspector or subscribe in code)
     public event Action OnPickedUp;
 
-    // ─────────────────────────────────────────────────────────
-    // PUBLIC API — call this from your pickup / interaction code
-    // ─────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Mark this item as permanently collected.
-    /// Call this wherever you currently disable the object or add it to inventory.
-    ///
-    /// Example — in your existing KeyPickup.cs OnTriggerEnter:
-    ///   GetComponent&lt;PersistentPickup&gt;()?.Collect();
-    ///   gameObject.SetActive(false);
-    /// </summary>
+    /// <summary>Mark as permanently collected (player just picked it up).</summary>
     public void Collect()
     {
         if (_collected) return;
         _collected = true;
-
-        // Register as permanently gone — survives checkpoint resets
         SceneStateTracker.Instance?.RegisterDestroyed(ResettableID);
 
-        OnPickedUp?.Invoke();
+        // KEY FIX: write directly into the saved checkpoint so this item
+        // stays gone even if no new checkpoint is reached after collection.
+        CheckpointManager.Instance?.RegisterPersistentDestruction(ResettableID);
 
-        Debug.Log($"[PersistentPickup] '{name}' collected and registered as permanent.");
+        OnPickedUp?.Invoke();
+        Debug.Log($"[PersistentPickup] '{name}' collected — ID: {ResettableID}");
     }
 
-    // ─────────────────────────────────────────────────────────
-    // IResettable
-    // ─────────────────────────────────────────────────────────
+    /// <summary>Silent re-suppress by CheckpointManager Phase 2. No tracker writes.</summary>
+    public void Suppress()
+    {
+        _collected = true;
+        gameObject.SetActive(false);
+    }
 
     public void SaveInitialState() { }
 
     public void ResetState()
     {
-        // CheckpointManager's "re-apply persistent" phase calls SetActive(false)
-        // on collected items — so ResetState just means "come back if not collected"
-        if (!_collected)
-        {
-            gameObject.SetActive(true);
-            Debug.Log($"[PersistentPickup] '{name}' reset — available again.");
-        }
-        // If _collected == true: CheckpointManager will immediately call
-        // SetActive(false) on the next frame via the persistent IDs pass
+        _collected = false;
+        gameObject.SetActive(true);
     }
 
     public void ForceCollect()
