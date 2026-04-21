@@ -27,14 +27,19 @@ public class StealthKill : MonoBehaviour
     [Tooltip("Layer(s) the enemy is on — used for sphere overlap check.")]
     public LayerMask enemyLayer;
 
+    [Header("Debug")]
+    [Tooltip("Print detection status to Console every N seconds. 0 = every frame (spammy).")]
+    public float debugLogInterval = 1.0f;
+
     // ── Runtime ───────────────────────────────────────────────
     private Animator     _animator;
     private PlayerHealth _health;
     private EnemyAI      _currentTarget;
 
-    // Cached hash for crouch param — set in Start(), never loops at runtime
     private int  _crouchHash;
     private bool _crouchParamExists;
+
+    private float _debugTimer;
 
     // ─────────────────────────────────────────────────────────
     void Awake()
@@ -45,7 +50,26 @@ public class StealthKill : MonoBehaviour
 
     void Start()
     {
-        // Cache crouch parameter once — O(1) lookup every frame afterwards
+        // ── Startup diagnostics ──────────────────────────────
+        if (_animator == null)
+            Debug.LogError("[StealthKill] No Animator found on this GameObject. "
+                         + "Crouch check will always fail. Attach StealthKill to the "
+                         + "same GameObject as the Animator, or enable forceCrouchAlwaysOn.");
+
+        if (_health == null)
+            Debug.LogWarning("[StealthKill] No PlayerHealth found on this GameObject. "
+                           + "Dead-player guard is disabled.");
+
+        if (promptUI == null)
+            Debug.LogWarning("[StealthKill] promptUI is not assigned in the Inspector. "
+                           + "The kill prompt will never appear.");
+
+        if (enemyLayer.value == 0)
+            Debug.LogError("[StealthKill] enemyLayer mask is empty (value = 0). "
+                         + "OverlapSphere will never hit any enemy. "
+                         + "Assign the correct layer in the Inspector.");
+
+        // ── Cache crouch parameter ───────────────────────────
         _crouchParamExists = false;
         if (_animator != null)
         {
@@ -60,12 +84,17 @@ public class StealthKill : MonoBehaviour
             }
 
             if (!_crouchParamExists)
-                Debug.LogWarning($"[StealthKill] Animator parameter '{crouchAnimParam}' not found. "
-                               + "Set 'forceCrouchAlwaysOn = true' to skip the crouch check.");
+                Debug.LogError($"[StealthKill] Animator parameter '{crouchAnimParam}' (Bool) not found. "
+                             + $"Parameters available: {ListAnimParams()} "
+                             + "Either fix the parameter name or enable forceCrouchAlwaysOn.");
+            else
+                Debug.Log($"[StealthKill] Crouch param '{crouchAnimParam}' cached OK (hash={_crouchHash}).");
         }
+
+        Debug.Log($"[StealthKill] Initialized — killRange={killRange}, behindAngle={behindAngle}, "
+                + $"enemyLayer={enemyLayer.value}, forceCrouchAlwaysOn={forceCrouchAlwaysOn}");
     }
 
-    // FIX: clean up prompt and target when component or GameObject is disabled
     void OnDisable()
     {
         HidePrompt();
@@ -77,13 +106,20 @@ public class StealthKill : MonoBehaviour
     {
         if (_health != null && _health.IsDead) { HidePrompt(); return; }
 
-        _currentTarget = FindKillTarget();
+        bool shouldLog = false;
+        _debugTimer -= Time.deltaTime;
+        if (_debugTimer <= 0f)
+        {
+            _debugTimer = debugLogInterval > 0f ? debugLogInterval : 0f;
+            shouldLog   = true;
+        }
+
+        _currentTarget = FindKillTarget(shouldLog);
 
         if (_currentTarget != null)
         {
             ShowPrompt();
 
-            // E key or Gamepad South (cross / A)
             bool pressed = Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
             if (!pressed && Gamepad.current != null)
                 pressed = Gamepad.current.buttonSouth.wasPressedThisFrame;
@@ -98,11 +134,34 @@ public class StealthKill : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────
-    EnemyAI FindKillTarget()
+    EnemyAI FindKillTarget(bool log)
     {
-        if (!IsCrouching()) return null;
+        bool crouching = IsCrouching();
+
+        if (log)
+            Debug.Log($"[StealthKill] IsCrouching={crouching} "
+                    + $"(forceCrouchAlwaysOn={forceCrouchAlwaysOn}, "
+                    + $"animatorNull={_animator == null}, "
+                    + $"paramExists={_crouchParamExists}, "
+                    + $"animValue={(_crouchParamExists && _animator != null ? _animator.GetBool(_crouchHash).ToString() : "N/A")})");
+
+        if (!crouching)
+        {
+            if (log) Debug.Log("[StealthKill] BLOCKED — player is not crouching.");
+            return null;
+        }
 
         Collider[] hits = Physics.OverlapSphere(transform.position, killRange, enemyLayer);
+
+        if (log)
+            Debug.Log($"[StealthKill] OverlapSphere at {transform.position} "
+                    + $"radius={killRange} layer={enemyLayer.value} → {hits.Length} collider(s) hit.");
+
+        if (hits.Length == 0 && log)
+            Debug.LogWarning("[StealthKill] No colliders found. Check: "
+                           + "(1) enemyLayer mask matches the enemy's layer, "
+                           + "(2) killRange is large enough, "
+                           + "(3) enemy has a Collider component.");
 
         EnemyAI best     = null;
         float   bestDist = float.MaxValue;
@@ -111,27 +170,50 @@ public class StealthKill : MonoBehaviour
         {
             EnemyAI enemy = col.GetComponentInParent<EnemyAI>();
 
-            if (enemy == null || !enemy.IsAlive) continue;
+            if (enemy == null)
+            {
+                if (log) Debug.Log($"[StealthKill] Collider '{col.name}' skipped — no EnemyAI in parent chain.");
+                continue;
+            }
 
-            // FIX: enemies in Combat or Melee state are fully alerted and facing the player
-            // — they cannot be stealth-killed. Skip them.
-            if (enemy.IsAlerted) continue;
+            if (!enemy.IsAlive)
+            {
+                if (log) Debug.Log($"[StealthKill] '{enemy.name}' skipped — not alive.");
+                continue;
+            }
 
-            // ── Behind-enemy angle check ──────────────────────────────────
-            // angleToBack == 0   → player is directly behind the enemy
-            // angleToBack == 180 → player is directly in front of the enemy
-            // We allow the kill when angleToBack <= behindAngle.
+            if (enemy.IsAlerted)
+            {
+                if (log) Debug.Log($"[StealthKill] '{enemy.name}' skipped — IsAlerted (Combat/Melee state).");
+                continue;
+            }
+
             Vector3 toPlayer    = (transform.position - enemy.transform.position).normalized;
             float   angleToBack = Vector3.Angle(enemy.transform.forward, toPlayer);
-            if (angleToBack < (180f - behindAngle)) continue;
+            float   required    = 180f - behindAngle;
+
+            if (angleToBack < required)
+            {
+                if (log) Debug.Log($"[StealthKill] '{enemy.name}' skipped — angle check failed. "
+                                 + $"angleToBack={angleToBack:F1}° (need >= {required:F1}°). "
+                                 + "Player is not far enough behind the enemy.");
+                continue;
+            }
 
             float dist = Vector3.Distance(transform.position, enemy.transform.position);
+            if (log) Debug.Log($"[StealthKill] '{enemy.name}' VALID — dist={dist:F2}, angleToBack={angleToBack:F1}°.");
+
             if (dist < bestDist)
             {
                 bestDist = dist;
                 best     = enemy;
             }
         }
+
+        if (log && best == null)
+            Debug.Log("[StealthKill] No valid target found this tick.");
+        else if (log && best != null)
+            Debug.Log($"[StealthKill] Best target selected: '{best.name}' at dist={bestDist:F2}.");
 
         return best;
     }
@@ -141,7 +223,8 @@ public class StealthKill : MonoBehaviour
     {
         if (enemy == null) return;
 
-        // Face the enemy
+        Debug.Log($"[StealthKill] Executing kill on '{enemy.name}'.");
+
         Vector3 dir = enemy.transform.position - transform.position;
         dir.y = 0f;
         if (dir != Vector3.zero)
@@ -150,21 +233,38 @@ public class StealthKill : MonoBehaviour
         _animator?.SetTrigger("StealthKill");
         enemy.ExecuteStealthKill();
         HidePrompt();
-        Debug.Log($"[StealthKill] Executed on {enemy.name}");
     }
 
     // ─────────────────────────────────────────────────────────
     bool IsCrouching()
     {
-        if (forceCrouchAlwaysOn)    return true;
-        if (_animator == null)      return false;
-        if (!_crouchParamExists)    return false;
-
+        if (forceCrouchAlwaysOn)  return true;
+        if (_animator == null)    return false;
+        if (!_crouchParamExists)  return false;
         return _animator.GetBool(_crouchHash);
     }
 
-    void ShowPrompt() { if (promptUI != null) promptUI.SetActive(true); }
+    void ShowPrompt()
+    {
+        if (promptUI == null)
+        {
+            Debug.LogWarning("[StealthKill] ShowPrompt called but promptUI is null. Assign it in the Inspector.");
+            return;
+        }
+        promptUI.SetActive(true);
+    }
+
     void HidePrompt() { if (promptUI != null) promptUI.SetActive(false); }
+
+    // ─────────────────────────────────────────────────────────
+    string ListAnimParams()
+    {
+        if (_animator == null) return "(no animator)";
+        var names = new System.Text.StringBuilder();
+        foreach (var p in _animator.parameters)
+            names.Append($"{p.name}({p.type}) ");
+        return names.Length > 0 ? names.ToString() : "(none)";
+    }
 
 #if UNITY_EDITOR
     void OnDrawGizmos()
