@@ -24,7 +24,7 @@ MonoBehaviour:
   m_MinSize: {x: 300, y: 112}
   m_MaxSize: {x: 24288, y: 16192}
   vertical: 0
-  controlID: 10842
+  controlID: 11911
   draggingID: 0
 --- !u!114 &2
 MonoBehaviour:
@@ -153,7 +153,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 112}
   m_MaxSize: {x: 16192, y: 16192}
   vertical: 1
-  controlID: 10843
+  controlID: 11912
   draggingID: 0
 --- !u!114 &4
 MonoBehaviour:
@@ -179,7 +179,7 @@ MonoBehaviour:
   m_MinSize: {x: 200, y: 56}
   m_MaxSize: {x: 16192, y: 8096}
   vertical: 0
-  controlID: 10844
+  controlID: 11913
   draggingID: 0
 --- !u!114 &5
 MonoBehaviour:
@@ -249,9 +249,9 @@ MonoBehaviour:
     m_TreeViewState:
       scrollPos: {x: 0, y: 184}
       m_SelectedIDs:
-      - m_Data: 73572
+      - m_Data: 59656
       m_LastClickedID:
-        m_Data: 73572
+        m_Data: 0
       m_ExpandedIDs:
       - m_Data: -7932
       - m_Data: -7930
@@ -357,7 +357,7 @@ MonoBehaviour:
     x: 364
     y: 87
     width: 1101
-    height: 377
+    height: 373
   m_SerializedDataModeController:
     m_DataMode: 0
     m_PreferredDataMode: 0
@@ -942,9 +942,9 @@ MonoBehaviour:
   m_AudioPlay: 0
   m_DebugDrawModesUseInteractiveLightBakingData: 0
   m_Position:
-    m_Target: {x: -67.80354, y: 34.8547, z: -47.09627}
+    m_Target: {x: -71.20721, y: 35.870583, z: -68.34689}
     speed: 2
-    m_Value: {x: -67.80354, y: 34.8547, z: -47.09627}
+    m_Value: {x: -71.20721, y: 35.870583, z: -68.34689}
   m_RenderMode: 0
   m_CameraMode:
     drawMode: 0
@@ -990,9 +990,9 @@ MonoBehaviour:
     m_GridAxis: 1
     m_gridOpacity: 0.5
   m_Rotation:
-    m_Target: {x: -0.041205704, y: 0.7946586, z: -0.10375188, w: -0.59973437}
+    m_Target: {x: 0.012864186, y: 0.72430044, z: -0.02858938, w: -0.69140136}
     speed: 2
-    m_Value: {x: -0.0411312, y: 0.7932218, z: -0.103564285, w: -0.59865}
+    m_Value: {x: 0.012840902, y: 0.72298944, z: -0.028537633, w: -0.6901499}
   m_Size:
     m_Target: 1.1715006
     speed: 2
@@ -1293,8 +1293,8 @@ MonoBehaviour:
       m_ResourceFile: 
   m_ListAreaState:
     m_SelectedInstanceIDs:
-    - m_Data: 73572
-    m_LastClickedInstanceID: 73572
+    - m_Data: 59656
+    m_LastClickedInstanceID: 59656
     m_HadKeyboardFocusLastEvent: 1
     m_ExpandedInstanceIDs:
     - m_Data: 73706
@@ -1444,7 +1444,7 @@ MonoBehaviour:
     m_ControlHash: -371814159
     m_PrefName: Preview_InspectorPreview
   m_LastInspectedObjectInstanceID: -1
-  m_LastVerticalScrollValue: 1455
+  m_LastVerticalScrollValue: 0
   m_GlobalObjectId: 
   m_InspectorMode: 0
   m_LockTracker:

@@ -14,7 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TutorialData
   tutorialType: 0
   bodyText: OH BOY! I'M ALIVE!! My...my legs...I don't feel my legs....What do you
-    mean by 'Press WASD'? Is that some kind of Chily?....Jump with Spacebar??
+    mean by 'Press WASD'? Is that some kind of Chily?....Jump with Spacebar? Run
+    with Shift?? Am I sure I didn't hit my head too?
   image: {fileID: 0}
   holdDuration: 2
   autoHideAfter: 10
