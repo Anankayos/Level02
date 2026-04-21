@@ -65,6 +65,13 @@ public class StealthKill : MonoBehaviour
         }
     }
 
+    // FIX: clean up prompt and target when component or GameObject is disabled
+    void OnDisable()
+    {
+        HidePrompt();
+        _currentTarget = null;
+    }
+
     // ─────────────────────────────────────────────────────────
     void Update()
     {
@@ -104,13 +111,13 @@ public class StealthKill : MonoBehaviour
         {
             EnemyAI enemy = col.GetComponentInParent<EnemyAI>();
 
-            // Skip dead enemies only — Patrol, Suspicious, Search AND Combat/Melee
-            // are all valid kill targets. IsAlerted (Combat/Melee) is NOT a blocker
-            // because once triggered it stays active for the enemy's lifetime.
             if (enemy == null || !enemy.IsAlive) continue;
 
+            // FIX: enemies in Combat or Melee state are fully alerted and facing the player
+            // — they cannot be stealth-killed. Skip them.
+            if (enemy.IsAlerted) continue;
+
             // ── Behind-enemy angle check ──────────────────────────────────
-            // We measure from the ENEMY's forward to the vector pointing at the PLAYER.
             // angleToBack == 0   → player is directly behind the enemy
             // angleToBack == 180 → player is directly in front of the enemy
             // We allow the kill when angleToBack <= behindAngle.
