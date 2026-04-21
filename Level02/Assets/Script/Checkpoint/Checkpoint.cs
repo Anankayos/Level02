@@ -15,6 +15,9 @@ public class Checkpoint : MonoBehaviour
              "Prevents mid-air accidental triggers.")]
     public bool requireGrounded = false;
 
+    [Tooltip("Optional explicit spawn point. If null, uses this collider's geometric center projected to the floor.")]
+    [SerializeField] private Transform spawnPoint;
+
     // Runtime
     private bool _activated;
     private Collider _col;
@@ -46,10 +49,12 @@ public class Checkpoint : MonoBehaviour
     {
         _activated = true;
 
+        Vector3 respawnPos = GetRespawnPosition();
+
         // ── 1. Tell CheckpointManager to save state + store respawn pos ──
         CheckpointManager cm = CheckpointManager.Instance;
         if (cm != null)
-            cm.SaveCheckpoint(transform.position, transform.rotation);
+            cm.SaveCheckpoint(respawnPos, transform.rotation);
         else
             Debug.LogWarning("[Checkpoint] CheckpointManager.Instance is null. " +
                              "Make sure CheckpointManager exists in the scene.");
@@ -62,9 +67,23 @@ public class Checkpoint : MonoBehaviour
 
         // ── 3. Spawn activation FX ────────────────────────────────────────
         if (activationFXPrefab != null)
-            Instantiate(activationFXPrefab, transform.position, Quaternion.identity);
+            Instantiate(activationFXPrefab, respawnPos, Quaternion.identity);
 
-        Debug.Log($"[Checkpoint] '{name}' activated. Respawn set to {transform.position}");
+        Debug.Log($"[Checkpoint] '{name}' activated. Respawn set to {respawnPos}");
+    }
+
+    Vector3 GetRespawnPosition()
+    {
+        if (spawnPoint != null)
+            return spawnPoint.position;
+
+        if (_col != null)
+        {
+            Bounds b = _col.bounds;
+            return new Vector3(b.center.x, b.min.y, b.center.z);
+        }
+
+        return transform.position;
     }
 
 #if UNITY_EDITOR
