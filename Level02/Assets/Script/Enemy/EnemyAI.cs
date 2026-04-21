@@ -477,7 +477,7 @@ public class EnemyAI : MonoBehaviour, IDamageable, IResettable
 
     public void ExecuteStealthKill()
     {
-        if (!IsAlive || IsAlerted) return;
+        if (!IsAlive) return;
         _anim?.SetTrigger("StealthKilled");
         TakeDamage(9999f, null);
     }
