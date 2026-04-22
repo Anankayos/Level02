@@ -2,12 +2,17 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// BossHitboxVisualizer — HZD-style hitbox feedback, URP/HDRP/Built-in safe.
-/// Mesh auto-detection priority:
-///   1. Inspector-assigned overlayMesh
-///   2. MeshFilter on this GO or any descendant
-///   3. SkinnedMeshRenderer on this GO or any descendant (bakes a snapshot mesh)
-///   4. Collider primitive fallback (Box → Cube, Sphere → Sphere, Capsule → Capsule)
+/// BossHitboxVisualizer — HZD-style hitbox feedback, URP-safe.
+///
+/// Mesh detection priority:
+///   1. Inspector-assigned overlayMesh (static mesh only)
+///   2. MeshFilter anywhere in subtree            → static overlay
+///   3. SkinnedMeshRenderer anywhere in subtree   → live re-baked every LateUpdate
+///   4. Collider primitive fallback               → Box / Sphere / Capsule proxy mesh
+///
+/// For skinned meshes the overlay MeshFilter is re-baked each LateUpdate so it
+/// always matches the current animation pose (legs, arms, etc.).
+///
 /// Filter Console by "[BHV]" to trace all steps.
 /// </summary>
 [RequireComponent(typeof(BossPart))]
@@ -48,6 +53,8 @@ public class BossHitboxVisualizer : MonoBehaviour
     // ─── Private ──────────────────────────────────────────────────────────────
     private GameObject   _overlayGO;
     private GameObject   _rimGO;
+    private MeshFilter   _overlayMF;   // needed for live re-bake
+    private MeshFilter   _rimMF;
     private MeshRenderer _overlayRenderer;
     private MeshRenderer _rimRenderer;
     private MaterialPropertyBlock _propBlock;
@@ -58,6 +65,10 @@ public class BossHitboxVisualizer : MonoBehaviour
     private Material _overlayMat;
     private Material _rimMat;
 
+    // Skinned mesh tracking
+    private SkinnedMeshRenderer _trackedSMR = null;  // non-null → re-bake mode
+    private Mesh _bakedMesh = null;                   // reused buffer (avoid GC)
+
     // ─── Unity ────────────────────────────────────────────────────────────────
     private void Awake()
     {
@@ -65,7 +76,7 @@ public class BossHitboxVisualizer : MonoBehaviour
         _propBlock    = new MaterialPropertyBlock();
         _rimPropBlock = new MaterialPropertyBlock();
         _ready = BuildMaterials() && BuildOverlayObjects();
-        Debug.Log($"[BHV] Awake complete on '{name}'. _ready={_ready}");
+        Debug.Log($"[BHV] Awake complete on '{name}'. _ready={_ready}  skinned={_trackedSMR != null}");
     }
 
     private void Start()
@@ -81,8 +92,17 @@ public class BossHitboxVisualizer : MonoBehaviour
         Debug.Log($"[BHV] '{name}' ready OK.");
     }
 
-    private void Update()
+    private void LateUpdate()
     {
+        // Re-bake skinned mesh every frame so overlay matches the live animation pose
+        if (_ready && _trackedSMR != null && _bakedMesh != null)
+        {
+            _trackedSMR.BakeMesh(_bakedMesh);
+            if (_overlayMF != null) _overlayMF.sharedMesh = _bakedMesh;
+            if (_rimMF     != null) _rimMF.sharedMesh     = _bakedMesh;
+        }
+
+        // Debug knob: drag debugForceAlpha > 0 in Inspector to verify rendering
         if (debugForceAlpha > 0f && _ready)
         {
             Color c = HPRatioToColor(1f - debugForceAlpha);
@@ -189,6 +209,7 @@ public class BossHitboxVisualizer : MonoBehaviour
     {
         string[] candidates =
         {
+            "Universal Render Pipeline/Lit",       // matches M_ISO_Mech pipeline
             "Universal Render Pipeline/Unlit",
             "Unlit/Transparent",
             "Unlit/Color",
@@ -199,19 +220,23 @@ public class BossHitboxVisualizer : MonoBehaviour
         foreach (var n in candidates)
         {
             var s = Shader.Find(n);
-            if (s != null) return s;
+            if (s != null) { Debug.Log($"[BHV] Shader candidate found: '{n}'"); return s; }
         }
         return null;
     }
 
     private static void ConfigureTransparentMaterial(Material mat, bool additive)
     {
-        mat.SetFloat("_Mode",   3);
-        mat.SetInt("_ZWrite",   0);
-        mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        mat.SetInt("_DstBlend", additive
+        // Surface type → Transparent for both URP Lit and Unlit
+        mat.SetFloat("_Surface",  1f);   // URP: 0=Opaque 1=Transparent
+        mat.SetFloat("_Mode",     3f);   // Built-in: Transparent
+        mat.SetFloat("_Blend",    additive ? 2f : 0f); // URP: 0=Alpha 2=Additive
+        mat.SetInt("_ZWrite",     0);
+        mat.SetInt("_SrcBlend",   (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        mat.SetInt("_DstBlend",   additive
             ? (int)UnityEngine.Rendering.BlendMode.One
             : (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        mat.SetInt("_Cull",       0);    // render both faces (avoids inside-out normals on baked mesh)
         mat.DisableKeyword("_ALPHATEST_ON");
         mat.EnableKeyword("_ALPHABLEND_ON");
         mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
@@ -223,98 +248,90 @@ public class BossHitboxVisualizer : MonoBehaviour
 
     private bool BuildOverlayObjects()
     {
+        // Try static mesh first
         if (overlayMesh == null)
-            overlayMesh = FindMeshDeep();
+            overlayMesh = FindStaticMesh();
 
+        // Try skinned mesh (sets _trackedSMR, no bake yet)
         if (overlayMesh == null)
-        {
-            // Last resort: build a primitive mesh from the collider shape
+            overlayMesh = FindSkinnedMesh();   // returns an empty Mesh buffer; _trackedSMR is set
+
+        // Collider primitive last resort
+        if (overlayMesh == null)
             overlayMesh = MeshFromCollider();
-        }
 
         if (overlayMesh == null)
         {
-            Debug.LogWarning($"[BHV] '{name}': No mesh found via MeshFilter, " +
-                             $"SkinnedMeshRenderer, or Collider. Assign Overlay Mesh manually.");
+            Debug.LogWarning($"[BHV] '{name}': No mesh found via any method. Assign Overlay Mesh manually.");
             return false;
         }
 
-        Debug.Log($"[BHV] '{name}': using mesh '{overlayMesh.name}'");
-        (_overlayGO, _overlayRenderer) = CreateOverlayChild("_HitOverlay", overlayScaleBias, _overlayMat);
+        Debug.Log($"[BHV] '{name}': mesh='{overlayMesh.name}'  skinned={_trackedSMR != null}");
+        (_overlayGO, _overlayRenderer, _overlayMF) = CreateOverlayChild("_HitOverlay", overlayScaleBias, _overlayMat);
         if (enableRimOverlay)
-            (_rimGO, _rimRenderer) = CreateOverlayChild("_HitRim", rimScaleBias, _rimMat);
+            (_rimGO, _rimRenderer, _rimMF) = CreateOverlayChild("_HitRim", rimScaleBias, _rimMat);
 
         return _overlayRenderer != null;
     }
 
-    /// <summary>
-    /// Searches the entire subtree for a MeshFilter or SkinnedMeshRenderer,
-    /// skipping our own overlay children so we don’t recurse into them.
-    /// </summary>
-    private Mesh FindMeshDeep()
+    // Returns first static MeshFilter mesh found in subtree
+    private Mesh FindStaticMesh()
     {
-        // MeshFilter search (static meshes)
         foreach (var mf in GetComponentsInChildren<MeshFilter>(includeInactive: true))
         {
             if (mf.sharedMesh == null) continue;
-            if (mf.gameObject.name.StartsWith("_Hit")) continue; // skip own overlays
-            Debug.Log($"[BHV] Found MeshFilter on '{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+            if (mf.gameObject.name.StartsWith("_Hit")) continue;
+            Debug.Log($"[BHV] MeshFilter found on '{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
             return mf.sharedMesh;
         }
+        return null;
+    }
 
-        // SkinnedMeshRenderer search (animated/rigged meshes)
+    // Finds a SkinnedMeshRenderer, stores it in _trackedSMR, and returns an
+    // EMPTY Mesh buffer that LateUpdate will fill every frame.
+    private Mesh FindSkinnedMesh()
+    {
         foreach (var smr in GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true))
         {
             if (smr.sharedMesh == null) continue;
             if (smr.gameObject.name.StartsWith("_Hit")) continue;
-            // Bake the current pose into a snapshot mesh
-            var baked = new Mesh { name = smr.sharedMesh.name + "_Baked" };
-            smr.BakeMesh(baked);
-            Debug.Log($"[BHV] Found SkinnedMeshRenderer on '{smr.gameObject.name}', baked mesh '{baked.name}'");
-            return baked;
+            _trackedSMR = smr;
+            _bakedMesh  = new Mesh { name = smr.sharedMesh.name + "_LiveBake" };
+            // Do an initial bake so the mesh isn't empty on frame 1
+            smr.BakeMesh(_bakedMesh);
+            Debug.Log($"[BHV] SkinnedMeshRenderer on '{smr.gameObject.name}' — live re-bake enabled.");
+            return _bakedMesh;
         }
-
         return null;
     }
 
-    /// <summary>
-    /// Builds a simple primitive mesh matching the Collider shape as a final fallback.
-    /// This guarantees the overlay always renders, even on invisible trigger colliders.
-    /// </summary>
     private Mesh MeshFromCollider()
     {
         var col = GetComponent<Collider>();
-        if (col == null) { Debug.LogWarning($"[BHV] '{name}': No Collider either — nothing to visualize."); return null; }
-
+        if (col == null) { Debug.LogWarning($"[BHV] '{name}': No Collider — nothing to visualize."); return null; }
         Mesh m = null;
         switch (col)
         {
             case BoxCollider box:
-                m = CreateBoxMesh(box.size);
-                m.name = "Hitbox_Box";
-                Debug.Log($"[BHV] '{name}': built Box primitive mesh (size={box.size})");
+                m = CreateBoxMesh(box.size); m.name = "Hitbox_Box";
+                Debug.Log($"[BHV] '{name}': Box primitive mesh (size={box.size})");
                 break;
-
             case SphereCollider sphere:
-                m = CreateSphereMesh(sphere.radius, 16, 12);
-                m.name = "Hitbox_Sphere";
-                Debug.Log($"[BHV] '{name}': built Sphere primitive mesh (r={sphere.radius})");
+                m = CreateSphereMesh(sphere.radius, 16, 12); m.name = "Hitbox_Sphere";
+                Debug.Log($"[BHV] '{name}': Sphere primitive mesh (r={sphere.radius})");
                 break;
-
             case CapsuleCollider capsule:
-                m = CreateCapsuleMesh(capsule.radius, capsule.height, 12);
-                m.name = "Hitbox_Capsule";
-                Debug.Log($"[BHV] '{name}': built Capsule primitive mesh (r={capsule.radius} h={capsule.height})");
+                m = CreateCapsuleMesh(capsule.radius, capsule.height, 12); m.name = "Hitbox_Capsule";
+                Debug.Log($"[BHV] '{name}': Capsule primitive mesh (r={capsule.radius} h={capsule.height})");
                 break;
-
             default:
-                Debug.LogWarning($"[BHV] '{name}': Unsupported collider type {col.GetType().Name}. Assign Overlay Mesh manually.");
+                Debug.LogWarning($"[BHV] '{name}': Unsupported collider type {col.GetType().Name}.");
                 break;
         }
         return m;
     }
 
-    private (GameObject, MeshRenderer) CreateOverlayChild(string childName, float scale, Material mat)
+    private (GameObject, MeshRenderer, MeshFilter) CreateOverlayChild(string childName, float scale, Material mat)
     {
         var go = new GameObject(childName);
         go.transform.SetParent(transform, false);
@@ -335,7 +352,7 @@ public class BossHitboxVisualizer : MonoBehaviour
         mr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
 
         Debug.Log($"[BHV] Created '{childName}' under '{name}' scale={scale} shader='{mat?.shader?.name}'");
-        return (go, mr);
+        return (go, mr, mf);
     }
 
     // ─── Apply Alpha ──────────────────────────────────────────────────────────
@@ -374,17 +391,11 @@ public class BossHitboxVisualizer : MonoBehaviour
         Vector3 h = size * 0.5f;
         mesh.vertices = new Vector3[]
         {
-            // Front
             new(-h.x,-h.y, h.z), new( h.x,-h.y, h.z), new( h.x, h.y, h.z), new(-h.x, h.y, h.z),
-            // Back
             new( h.x,-h.y,-h.z), new(-h.x,-h.y,-h.z), new(-h.x, h.y,-h.z), new( h.x, h.y,-h.z),
-            // Left
             new(-h.x,-h.y,-h.z), new(-h.x,-h.y, h.z), new(-h.x, h.y, h.z), new(-h.x, h.y,-h.z),
-            // Right
             new( h.x,-h.y, h.z), new( h.x,-h.y,-h.z), new( h.x, h.y,-h.z), new( h.x, h.y, h.z),
-            // Top
             new(-h.x, h.y, h.z), new( h.x, h.y, h.z), new( h.x, h.y,-h.z), new(-h.x, h.y,-h.z),
-            // Bottom
             new(-h.x,-h.y,-h.z), new( h.x,-h.y,-h.z), new( h.x,-h.y, h.z), new(-h.x,-h.y, h.z),
         };
         mesh.triangles = new int[]
@@ -427,39 +438,27 @@ public class BossHitboxVisualizer : MonoBehaviour
 
     private static Mesh CreateCapsuleMesh(float radius, float height, int segs)
     {
-        // Simple capsule: two hemispheres + cylinder body
         float bodyHalf = Mathf.Max(0f, height * 0.5f - radius);
         var verts = new System.Collections.Generic.List<Vector3>();
         var tris  = new System.Collections.Generic.List<int>();
         int hemi = segs / 2;
-        // Top hemisphere
-        for (int lat = 0; lat <= hemi; lat++)
+        for (int section = 0; section < 2; section++)
         {
-            float theta = Mathf.PI * 0.5f * lat / hemi;
-            for (int lon = 0; lon <= segs; lon++)
+            float ySign = section == 0 ? 1f : -1f;
+            for (int lat = 0; lat <= hemi; lat++)
             {
-                float phi = 2f * Mathf.PI * lon / segs;
-                verts.Add(new Vector3(
-                    radius * Mathf.Cos(theta) * Mathf.Cos(phi),
-                    bodyHalf + radius * Mathf.Sin(theta),
-                    radius * Mathf.Cos(theta) * Mathf.Sin(phi)));
+                float theta = Mathf.PI * 0.5f * lat / hemi;
+                for (int lon = 0; lon <= segs; lon++)
+                {
+                    float phi = 2f * Mathf.PI * lon / segs;
+                    verts.Add(new Vector3(
+                        radius * Mathf.Cos(theta) * Mathf.Cos(phi),
+                        ySign * (bodyHalf + radius * Mathf.Sin(theta)),
+                        radius * Mathf.Cos(theta) * Mathf.Sin(phi)));
+                }
             }
         }
-        // Bottom hemisphere
-        for (int lat = 0; lat <= hemi; lat++)
-        {
-            float theta = Mathf.PI * 0.5f * lat / hemi;
-            for (int lon = 0; lon <= segs; lon++)
-            {
-                float phi = 2f * Mathf.PI * lon / segs;
-                verts.Add(new Vector3(
-                    radius * Mathf.Cos(theta) * Mathf.Cos(phi),
-                    -bodyHalf - radius * Mathf.Sin(theta),
-                    radius * Mathf.Cos(theta) * Mathf.Sin(phi)));
-            }
-        }
-        int w = segs + 1;
-        int total = (hemi + 1) * w;
+        int w = segs + 1, total = (hemi + 1) * w;
         for (int section = 0; section < 2; section++)
         {
             int off = section * total;
@@ -470,13 +469,10 @@ public class BossHitboxVisualizer : MonoBehaviour
                     tris.AddRange(section == 0 ? new[]{a,b,c,b,d,c} : new[]{a,c,b,b,c,d});
                 }
         }
-        // Cylinder band connecting the two hemispheres
-        int topRing = hemi * w;
-        int botRing = total;
+        int topRing = hemi * w, botRing = total;
         for (int lon = 0; lon < segs; lon++)
         {
-            int a = topRing+lon, b = topRing+lon+1;
-            int c = botRing+lon, d = botRing+lon+1;
+            int a = topRing+lon, b = topRing+lon+1, c = botRing+lon, d = botRing+lon+1;
             tris.AddRange(new[]{a,c,b, b,c,d});
         }
         var mesh = new Mesh { vertices = verts.ToArray(), triangles = tris.ToArray() };
