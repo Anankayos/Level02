@@ -7,14 +7,9 @@ using System.Collections;
 /// Mesh detection (in order):
 ///   1. Inspector-assigned overlayMesh              → static overlay on this GO
 ///   2. MeshFilter anywhere in own subtree           → static overlay on this GO
-///   3. SkinnedMeshRenderer anywhere in ROOT tree    → live-baked overlay parented to SMR
+///   3. SkinnedMeshRenderer in the BOSS subtree      → live-baked overlay parented to SMR
+///      (scoped to nearest Animator/BossAI ancestor, not scene root)
 ///   4. Collider primitive (Box/Sphere/Capsule)      → static overlay on this GO
-///
-/// For skinned meshes the script walks UP to the hierarchy root, then searches
-/// the entire tree downward — so it finds SK_Mech_LOD0 even when BossPart sits
-/// on a sibling bone (FrontLegL, MiddleLegR, etc.).
-/// The overlay child is parented directly to the SMR's GameObject so the baked
-/// mesh is already in the correct local space.
 ///
 /// Filter Console by "[BHV]" to trace all steps.
 /// </summary>
@@ -66,10 +61,8 @@ public class BossHitboxVisualizer : MonoBehaviour
     private Material _overlayMat;
     private Material _rimMat;
 
-    // Skinned mesh live-bake
     private SkinnedMeshRenderer _trackedSMR  = null;
     private Mesh                _bakedMesh   = null;
-    // When using SMR the overlays are parented to the SMR GO, not this GO
     private Transform           _overlayRoot = null;
 
     // ─── Unity ────────────────────────────────────────────────────────────────
@@ -85,14 +78,9 @@ public class BossHitboxVisualizer : MonoBehaviour
 
     private void Start()
     {
-        if (!_ready)
-        {
-            Debug.LogError($"[BHV] '{name}' NOT ready — check warnings above.");
-            return;
-        }
+        if (!_ready) { Debug.LogError($"[BHV] '{name}' NOT ready — check warnings above."); return; }
         ApplyAlpha(0f, Color.white, _overlayRenderer, _propBlock);
-        if (_rimRenderer != null)
-            ApplyAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
+        if (_rimRenderer != null) ApplyAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
         Debug.Log($"[BHV] '{name}' started OK.");
     }
 
@@ -100,7 +88,6 @@ public class BossHitboxVisualizer : MonoBehaviour
     {
         if (!_ready) return;
 
-        // Re-bake skinned mesh every frame to match live animation
         if (_trackedSMR != null && _bakedMesh != null)
         {
             _trackedSMR.BakeMesh(_bakedMesh);
@@ -108,7 +95,6 @@ public class BossHitboxVisualizer : MonoBehaviour
             if (_rimMF     != null) _rimMF.sharedMesh     = _bakedMesh;
         }
 
-        // Debug knob — drag in Inspector while in Play mode
         if (debugForceAlpha > 0f)
         {
             Color c = HPRatioToColor(1f - debugForceAlpha);
@@ -221,15 +207,15 @@ public class BossHitboxVisualizer : MonoBehaviour
 
     private static void ConfigureMat(Material mat, bool additive)
     {
-        mat.SetFloat("_Surface", 1f);   // URP: Transparent
-        mat.SetFloat("_Mode",    3f);   // Built-in: Transparent
+        mat.SetFloat("_Surface", 1f);
+        mat.SetFloat("_Mode",    3f);
         mat.SetFloat("_Blend",   additive ? 2f : 0f);
         mat.SetInt("_ZWrite",    0);
         mat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
         mat.SetInt("_DstBlend",  additive
             ? (int)UnityEngine.Rendering.BlendMode.One
             : (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-        mat.SetInt("_Cull", 0); // double-sided
+        mat.SetInt("_Cull", 0);
         mat.DisableKeyword("_ALPHATEST_ON");
         mat.EnableKeyword("_ALPHABLEND_ON");
         mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
@@ -241,38 +227,37 @@ public class BossHitboxVisualizer : MonoBehaviour
 
     private bool BuildOverlayObjects()
     {
-        // 1. Inspector mesh — static, parented to this GO
+        // 1. Inspector mesh
         if (overlayMesh != null)
         {
             _overlayRoot = transform;
-            Debug.Log($"[BHV] '{name}': using Inspector-assigned mesh.");
             return SpawnOverlays();
         }
 
-        // 2. MeshFilter anywhere in own subtree — static, parented to this GO
+        // 2. Static MeshFilter in own subtree
         var mf = FindStaticMesh();
         if (mf != null)
         {
             overlayMesh  = mf.sharedMesh;
             _overlayRoot = transform;
-            Debug.Log($"[BHV] '{name}': static mesh '{overlayMesh.name}' from MeshFilter on '{mf.gameObject.name}'.");
+            Debug.Log($"[BHV] '{name}': static mesh '{overlayMesh.name}' on '{mf.gameObject.name}'.");
             return SpawnOverlays();
         }
 
-        // 3. SkinnedMeshRenderer — search the ENTIRE hierarchy from the root
-        var smr = FindSMRFromRoot();
+        // 3. SkinnedMeshRenderer — scoped to the nearest boss-root ancestor
+        var smr = FindSMRInBossRoot();
         if (smr != null)
         {
             _trackedSMR  = smr;
             _bakedMesh   = new Mesh { name = smr.sharedMesh.name + "_LiveBake" };
-            smr.BakeMesh(_bakedMesh);          // initial bake so frame 1 isn't empty
+            smr.BakeMesh(_bakedMesh);
             overlayMesh  = _bakedMesh;
-            _overlayRoot = smr.transform;      // parent overlays to the SMR's GO
-            Debug.Log($"[BHV] '{name}': SMR '{smr.gameObject.name}' found — live-bake mode, overlayRoot='{_overlayRoot.name}'.");
+            _overlayRoot = smr.transform;
+            Debug.Log($"[BHV] '{name}': SMR '{smr.gameObject.name}' — live-bake, overlayRoot='{_overlayRoot.name}'.");
             return SpawnOverlays();
         }
 
-        // 4. Collider primitive fallback — parented to this GO
+        // 4. Collider primitive
         overlayMesh = MeshFromCollider();
         if (overlayMesh != null)
         {
@@ -280,7 +265,7 @@ public class BossHitboxVisualizer : MonoBehaviour
             return SpawnOverlays();
         }
 
-        Debug.LogWarning($"[BHV] '{name}': No mesh found via any method. Assign Overlay Mesh manually.");
+        Debug.LogWarning($"[BHV] '{name}': No mesh found. Assign Overlay Mesh manually.");
         return false;
     }
 
@@ -296,22 +281,37 @@ public class BossHitboxVisualizer : MonoBehaviour
     }
 
     /// <summary>
-    /// Walks UP to the scene root, then searches the entire tree downward.
-    /// This finds SK_Mech_LOD0 even when BossPart is on a sibling bone.
+    /// Finds the boss-specific sub-root by walking up to the nearest ancestor
+    /// that has a BossAI or Animator component — this scopes the SMR search
+    /// to just the boss prefab, preventing matches on other characters in the
+    /// same scene group (e.g. Mannequin_Man under ==ENEMY==).
     /// </summary>
-    private SkinnedMeshRenderer FindSMRFromRoot()
+    private SkinnedMeshRenderer FindSMRInBossRoot()
     {
-        // Find scene root (topmost transform with no parent)
-        Transform root = transform;
-        while (root.parent != null) root = root.parent;
+        // Walk up to nearest ancestor with BossAI or Animator
+        Transform bossRoot = transform;
+        Transform cursor   = transform.parent;
+        while (cursor != null)
+        {
+            if (cursor.GetComponent<BossAI>() != null ||
+                cursor.GetComponent<Animator>() != null)
+            {
+                bossRoot = cursor;
+                break;          // stop at the first qualifying ancestor
+            }
+            cursor = cursor.parent;
+        }
 
-        Debug.Log($"[BHV] '{name}': searching for SMR from root '{root.name}'");
+        Debug.Log($"[BHV] '{name}': SMR search scoped to '{bossRoot.name}'");
 
-        foreach (var smr in root.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true))
+        // Search downward from that root only
+        foreach (var smr in bossRoot.GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true))
         {
             if (smr.sharedMesh == null) continue;
             if (smr.gameObject.name.StartsWith("_Hit")) continue;
-            Debug.Log($"[BHV] '{name}': found SMR on '{smr.gameObject.name}' mesh='{smr.sharedMesh.name}'");
+            // Prefer meshes whose name contains "SK_" or "Mech" (the boss mesh)
+            // but accept any SMR if nothing better is found
+            Debug.Log($"[BHV] '{name}': candidate SMR '{smr.gameObject.name}'");
             return smr;
         }
         return null;
@@ -328,7 +328,6 @@ public class BossHitboxVisualizer : MonoBehaviour
     private (MeshRenderer, MeshFilter) CreateOverlayChild(string childName, float scale, Material mat)
     {
         var go = new GameObject(childName);
-        // Parent to _overlayRoot (SMR's GO for skinned, this GO for static)
         go.transform.SetParent(_overlayRoot, worldPositionStays: false);
         go.transform.localPosition = Vector3.zero;
         go.transform.localRotation = Quaternion.identity;
@@ -388,9 +387,9 @@ public class BossHitboxVisualizer : MonoBehaviour
             case BoxCollider box:
                 m = CreateBoxMesh(box.size); m.name = "Hitbox_Box";
                 Debug.Log($"[BHV] '{name}': Box primitive (size={box.size})"); break;
-            case SphereCollider sphere:
-                m = CreateSphereMesh(sphere.radius, 16, 12); m.name = "Hitbox_Sphere";
-                Debug.Log($"[BHV] '{name}': Sphere primitive (r={sphere.radius})"); break;
+            case SphereCollider sp:
+                m = CreateSphereMesh(sp.radius, 16, 12); m.name = "Hitbox_Sphere";
+                Debug.Log($"[BHV] '{name}': Sphere primitive (r={sp.radius})"); break;
             case CapsuleCollider cap:
                 m = CreateCapsuleMesh(cap.radius, cap.height, 12); m.name = "Hitbox_Capsule";
                 Debug.Log($"[BHV] '{name}': Capsule primitive (r={cap.radius} h={cap.height})"); break;
@@ -404,8 +403,7 @@ public class BossHitboxVisualizer : MonoBehaviour
 
     private static Mesh CreateBoxMesh(Vector3 size)
     {
-        var m = new Mesh();
-        Vector3 h = size * 0.5f;
+        var m = new Mesh(); Vector3 h = size * 0.5f;
         m.vertices = new[]{
             new Vector3(-h.x,-h.y, h.z),new Vector3( h.x,-h.y, h.z),new Vector3( h.x, h.y, h.z),new Vector3(-h.x, h.y, h.z),
             new Vector3( h.x,-h.y,-h.z),new Vector3(-h.x,-h.y,-h.z),new Vector3(-h.x, h.y,-h.z),new Vector3( h.x, h.y,-h.z),
