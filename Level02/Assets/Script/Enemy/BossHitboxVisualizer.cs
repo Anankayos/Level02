@@ -3,29 +3,27 @@ using System.Collections;
 
 /// <summary>
 /// BossHitboxVisualizer — HZD-style hitbox feedback, URP/HDRP/Built-in safe.
-///
-/// DEBUG VERSION: every critical step logs to the Console so you can trace exactly
-/// where the pipeline breaks.  Filter Console by "[BHV]" to see only these messages.
-///
-/// SETUP:
-///   1. Add this component to the same GameObject as BossPart.
-///   2. Optionally assign Overlay Mesh in Inspector — if empty it auto-finds MeshFilter.
-///   3. Hit Play and shoot the boss — watch the Console for [BHV] lines.
+/// Mesh auto-detection priority:
+///   1. Inspector-assigned overlayMesh
+///   2. MeshFilter on this GO or any descendant
+///   3. SkinnedMeshRenderer on this GO or any descendant (bakes a snapshot mesh)
+///   4. Collider primitive fallback (Box → Cube, Sphere → Sphere, Capsule → Capsule)
+/// Filter Console by "[BHV]" to trace all steps.
 /// </summary>
 [RequireComponent(typeof(BossPart))]
 public class BossHitboxVisualizer : MonoBehaviour
 {
     // ─── Inspector ────────────────────────────────────────────────────────────
     [Header("Overlay Mesh")]
-    [Tooltip("Mesh used for the hit overlay. Leave empty to auto-detect from MeshFilter.")]
+    [Tooltip("Leave empty for auto-detection (MeshFilter / SkinnedMeshRenderer / Collider fallback).")]
     [SerializeField] private Mesh overlayMesh;
     [SerializeField] private float overlayScaleBias = 1.02f;
 
     [Header("Pulse Settings")]
-    [SerializeField] [Range(0f, 1f)] private float peakAlpha     = 0.75f;
-    [SerializeField]                 private float fadeDuration   = 0.35f;
-    [SerializeField] [Range(0f, 0.5f)] private float lingerAlpha  = 0.18f;
-    [SerializeField]                 private float lingerDuration  = 1.2f;
+    [SerializeField] [Range(0f,1f)]   private float peakAlpha    = 0.75f;
+    [SerializeField]                  private float fadeDuration  = 0.35f;
+    [SerializeField] [Range(0f,0.5f)] private float lingerAlpha  = 0.18f;
+    [SerializeField]                  private float lingerDuration = 1.2f;
 
     [Header("Color Encoding")]
     [SerializeField] private Color colorHealthy  = new Color(0.2f, 0.9f, 0.4f, 1f);
@@ -37,15 +35,14 @@ public class BossHitboxVisualizer : MonoBehaviour
     [SerializeField] [Range(0f,1f)] private float critThreshold = 0.10f;
 
     [Header("Rim Overlay")]
-    [SerializeField] private bool  enableRimOverlay    = true;
-    [SerializeField] [Range(1.01f, 1.15f)] private float rimScaleBias        = 1.06f;
-    [SerializeField] [Range(0f,1f)]        private float rimAlphaMultiplier  = 0.4f;
+    [SerializeField] private bool  enableRimOverlay   = true;
+    [SerializeField] [Range(1.01f,1.15f)] private float rimScaleBias       = 1.06f;
+    [SerializeField] [Range(0f,1f)]       private float rimAlphaMultiplier = 0.4f;
 
     [Header("Debug / Editor")]
     [SerializeField] private bool  alwaysShowGizmo = true;
     [SerializeField] private Color gizmoColor      = new Color(0f, 1f, 0.5f, 0.25f);
-    [Tooltip("Force the overlay to stay visible at this alpha permanently (0 = off). " +
-             "Use in Play mode to verify the mesh/material are working before testing hits.")]
+    [Tooltip("Set > 0 in Play mode to force the overlay visible immediately — no hit needed.")]
     [SerializeField] [Range(0f,1f)] private float debugForceAlpha = 0f;
 
     // ─── Private ──────────────────────────────────────────────────────────────
@@ -58,8 +55,6 @@ public class BossHitboxVisualizer : MonoBehaviour
     private Coroutine _flashCoroutine;
     private Coroutine _lingerCoroutine;
     private bool _ready = false;
-
-    // Per-instance materials so URP/HDRP property changes don't bleed across objects
     private Material _overlayMat;
     private Material _rimMat;
 
@@ -70,28 +65,24 @@ public class BossHitboxVisualizer : MonoBehaviour
         _propBlock    = new MaterialPropertyBlock();
         _rimPropBlock = new MaterialPropertyBlock();
         _ready = BuildMaterials() && BuildOverlayObjects();
-        Debug.Log($"[BHV] Awake complete. _ready={_ready}");
+        Debug.Log($"[BHV] Awake complete on '{name}'. _ready={_ready}");
     }
 
     private void Start()
     {
         if (!_ready)
         {
-            Debug.LogError($"[BHV] '{name}' is NOT ready — overlay will not show. Check warnings above.");
+            Debug.LogError($"[BHV] '{name}' NOT ready — overlay will not show. Check warnings above.");
             return;
         }
-
-        // Ensure overlays start invisible
         ApplyAlpha(0f, Color.white, _overlayRenderer, _propBlock);
         if (_rimRenderer != null)
             ApplyAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
-
-        Debug.Log($"[BHV] '{name}' initialized OK. overlayGO='{_overlayGO?.name}'  rimGO='{_rimGO?.name}'");
+        Debug.Log($"[BHV] '{name}' ready OK.");
     }
 
     private void Update()
     {
-        // Debug knob: drag debugForceAlpha > 0 in Play mode to verify rendering
         if (debugForceAlpha > 0f && _ready)
         {
             Color c = HPRatioToColor(1f - debugForceAlpha);
@@ -107,14 +98,12 @@ public class BossHitboxVisualizer : MonoBehaviour
     {
         if (!_ready)
         {
-            Debug.LogWarning($"[BHV] NotifyHit on '{name}' but _ready=false — overlay skipped.");
+            Debug.LogWarning($"[BHV] NotifyHit on '{name}' but _ready=false.");
             return;
         }
-
         float ratio    = Mathf.Clamp01(currentHP / Mathf.Max(maxHP, 0.001f));
         Color hitColor = HPRatioToColor(ratio);
-        Debug.Log($"[BHV] NotifyHit '{name}' | dmg={damage} hp={currentHP}/{maxHP} ratio={ratio:F2} color={hitColor}");
-
+        Debug.Log($"[BHV] Hit '{name}' dmg={damage} hp={currentHP}/{maxHP} ratio={ratio:F2} color={hitColor}");
         if (_flashCoroutine  != null) StopCoroutine(_flashCoroutine);
         if (_lingerCoroutine != null) StopCoroutine(_lingerCoroutine);
         _flashCoroutine  = StartCoroutine(FlashPulse(hitColor));
@@ -135,7 +124,7 @@ public class BossHitboxVisualizer : MonoBehaviour
         if (_flashCoroutine  != null) StopCoroutine(_flashCoroutine);
         if (_lingerCoroutine != null) StopCoroutine(_lingerCoroutine);
         if (_overlayRenderer != null) ApplyAlpha(0f, Color.white, _overlayRenderer, _propBlock);
-        if (_rimRenderer     != null) ApplyAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
+        if (_rimRenderer     != null) ApplyAlpha(0f, Color.white, _rimRenderer,     _rimPropBlock);
     }
 
     // ─── Coroutines ───────────────────────────────────────────────────────────
@@ -163,7 +152,7 @@ public class BossHitboxVisualizer : MonoBehaviour
     private IEnumerator LingerGlow(Color hitColor)
     {
         yield return new WaitForSeconds(fadeDuration + lingerDuration * 0.5f);
-        float elapsed = 0f;
+        float elapsed  = 0f;
         float fadeTime = lingerDuration * 0.5f;
         while (elapsed < fadeTime)
         {
@@ -182,33 +171,23 @@ public class BossHitboxVisualizer : MonoBehaviour
 
     // ─── Build Helpers ────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Creates per-instance materials using the best available shader pipeline.
-    /// Priority: URP Unlit → Built-in Transparent → fallback pink (always visible).
-    /// </summary>
     private bool BuildMaterials()
     {
-        Shader overlayShader = FindBestTransparentShader();
-        if (overlayShader == null)
-        {
-            Debug.LogError("[BHV] Could not find ANY usable transparent shader. Materials will be null.");
-            return false;
-        }
-        Debug.Log($"[BHV] Using shader: '{overlayShader.name}'");
+        Shader s = FindBestTransparentShader();
+        if (s == null) { Debug.LogError("[BHV] No usable transparent shader found."); return false; }
+        Debug.Log($"[BHV] Using shader '{s.name}' on '{name}'");
 
-        _overlayMat = new Material(overlayShader) { name = "BossHitbox_Overlay" };
+        _overlayMat = new Material(s) { name = "BossHitbox_Overlay" };
         ConfigureTransparentMaterial(_overlayMat, additive: false);
 
-        _rimMat = new Material(overlayShader) { name = "BossHitbox_Rim" };
+        _rimMat = new Material(s) { name = "BossHitbox_Rim" };
         ConfigureTransparentMaterial(_rimMat, additive: true);
-
         return true;
     }
 
     private static Shader FindBestTransparentShader()
     {
-        // Try URP/HDRP unlit first (most projects in 2024+ use URP)
-        string[] candidates = new[]
+        string[] candidates =
         {
             "Universal Render Pipeline/Unlit",
             "Unlit/Transparent",
@@ -217,72 +196,122 @@ public class BossHitboxVisualizer : MonoBehaviour
             "Standard",
             "Legacy Shaders/Transparent/Diffuse"
         };
-
-        foreach (var name in candidates)
+        foreach (var n in candidates)
         {
-            var s = Shader.Find(name);
-            if (s != null)
-            {
-                Debug.Log($"[BHV] Found shader candidate: '{name}'");
-                return s;
-            }
+            var s = Shader.Find(n);
+            if (s != null) return s;
         }
         return null;
     }
 
     private static void ConfigureTransparentMaterial(Material mat, bool additive)
     {
-        // Universal property names that work across Built-in & URP shaders
-        mat.SetFloat("_Mode",    3);   // Standard: Transparent
-        mat.SetInt("_ZWrite",    0);
-        mat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        mat.SetInt("_DstBlend",  additive
-            ? (int)UnityEngine.Rendering.BlendMode.One                 // Additive
-            : (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);  // Alpha blend
-
-        // Standard shader keywords
+        mat.SetFloat("_Mode",   3);
+        mat.SetInt("_ZWrite",   0);
+        mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        mat.SetInt("_DstBlend", additive
+            ? (int)UnityEngine.Rendering.BlendMode.One
+            : (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
         mat.DisableKeyword("_ALPHATEST_ON");
         mat.EnableKeyword("_ALPHABLEND_ON");
         mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-
-        // URP surface type keywords
         mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-
         mat.renderQueue = additive ? 3001 : 3000;
-
-        // Set a visible default color (white semi-transparent) so it's obvious if rendering works
-        if (mat.HasProperty("_Color"))
-            mat.SetColor("_Color", new Color(1f, 1f, 1f, 0.8f));
-        if (mat.HasProperty("_BaseColor"))
-            mat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.8f));
+        if (mat.HasProperty("_Color"))     mat.SetColor("_Color",     Color.white);
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.white);
     }
 
     private bool BuildOverlayObjects()
     {
-        // Auto-detect mesh
+        if (overlayMesh == null)
+            overlayMesh = FindMeshDeep();
+
         if (overlayMesh == null)
         {
-            var mf = GetComponent<MeshFilter>() ?? GetComponentInChildren<MeshFilter>();
-            if (mf != null)
-            {
-                overlayMesh = mf.sharedMesh;
-                Debug.Log($"[BHV] Auto-detected mesh '{overlayMesh?.name}' from MeshFilter on '{mf.gameObject.name}'");
-            }
+            // Last resort: build a primitive mesh from the collider shape
+            overlayMesh = MeshFromCollider();
         }
 
         if (overlayMesh == null)
         {
-            Debug.LogWarning($"[BHV] '{name}': No mesh found. Assign Overlay Mesh in the Inspector.");
+            Debug.LogWarning($"[BHV] '{name}': No mesh found via MeshFilter, " +
+                             $"SkinnedMeshRenderer, or Collider. Assign Overlay Mesh manually.");
             return false;
         }
 
-        Debug.Log($"[BHV] Building overlay objects for '{name}' using mesh '{overlayMesh.name}'");
+        Debug.Log($"[BHV] '{name}': using mesh '{overlayMesh.name}'");
         (_overlayGO, _overlayRenderer) = CreateOverlayChild("_HitOverlay", overlayScaleBias, _overlayMat);
-
         if (enableRimOverlay)
             (_rimGO, _rimRenderer) = CreateOverlayChild("_HitRim", rimScaleBias, _rimMat);
 
         return _overlayRenderer != null;
+    }
+
+    /// <summary>
+    /// Searches the entire subtree for a MeshFilter or SkinnedMeshRenderer,
+    /// skipping our own overlay children so we don’t recurse into them.
+    /// </summary>
+    private Mesh FindMeshDeep()
+    {
+        // MeshFilter search (static meshes)
+        foreach (var mf in GetComponentsInChildren<MeshFilter>(includeInactive: true))
+        {
+            if (mf.sharedMesh == null) continue;
+            if (mf.gameObject.name.StartsWith("_Hit")) continue; // skip own overlays
+            Debug.Log($"[BHV] Found MeshFilter on '{mf.gameObject.name}' mesh='{mf.sharedMesh.name}'");
+            return mf.sharedMesh;
+        }
+
+        // SkinnedMeshRenderer search (animated/rigged meshes)
+        foreach (var smr in GetComponentsInChildren<SkinnedMeshRenderer>(includeInactive: true))
+        {
+            if (smr.sharedMesh == null) continue;
+            if (smr.gameObject.name.StartsWith("_Hit")) continue;
+            // Bake the current pose into a snapshot mesh
+            var baked = new Mesh { name = smr.sharedMesh.name + "_Baked" };
+            smr.BakeMesh(baked);
+            Debug.Log($"[BHV] Found SkinnedMeshRenderer on '{smr.gameObject.name}', baked mesh '{baked.name}'");
+            return baked;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Builds a simple primitive mesh matching the Collider shape as a final fallback.
+    /// This guarantees the overlay always renders, even on invisible trigger colliders.
+    /// </summary>
+    private Mesh MeshFromCollider()
+    {
+        var col = GetComponent<Collider>();
+        if (col == null) { Debug.LogWarning($"[BHV] '{name}': No Collider either — nothing to visualize."); return null; }
+
+        Mesh m = null;
+        switch (col)
+        {
+            case BoxCollider box:
+                m = CreateBoxMesh(box.size);
+                m.name = "Hitbox_Box";
+                Debug.Log($"[BHV] '{name}': built Box primitive mesh (size={box.size})");
+                break;
+
+            case SphereCollider sphere:
+                m = CreateSphereMesh(sphere.radius, 16, 12);
+                m.name = "Hitbox_Sphere";
+                Debug.Log($"[BHV] '{name}': built Sphere primitive mesh (r={sphere.radius})");
+                break;
+
+            case CapsuleCollider capsule:
+                m = CreateCapsuleMesh(capsule.radius, capsule.height, 12);
+                m.name = "Hitbox_Capsule";
+                Debug.Log($"[BHV] '{name}': built Capsule primitive mesh (r={capsule.radius} h={capsule.height})");
+                break;
+
+            default:
+                Debug.LogWarning($"[BHV] '{name}': Unsupported collider type {col.GetType().Name}. Assign Overlay Mesh manually.");
+                break;
+        }
+        return m;
     }
 
     private (GameObject, MeshRenderer) CreateOverlayChild(string childName, float scale, Material mat)
@@ -293,44 +322,33 @@ public class BossHitboxVisualizer : MonoBehaviour
         go.transform.localRotation = Quaternion.identity;
         go.transform.localScale    = Vector3.one * scale;
         go.layer = gameObject.layer;
-        // NOTE: keep active=true so SetPropertyBlock takes effect immediately;
-        // visibility is controlled by alpha via MaterialPropertyBlock.
         go.SetActive(true);
 
-        var mf       = go.AddComponent<MeshFilter>();
+        var mf        = go.AddComponent<MeshFilter>();
         mf.sharedMesh = overlayMesh;
 
-        var mr                   = go.AddComponent<MeshRenderer>();
-        mr.material              = mat;   // instance assignment (not sharedMaterial)
-        mr.shadowCastingMode     = UnityEngine.Rendering.ShadowCastingMode.Off;
-        mr.receiveShadows        = false;
-        mr.lightProbeUsage       = UnityEngine.Rendering.LightProbeUsage.Off;
-        mr.reflectionProbeUsage  = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+        var mr                  = go.AddComponent<MeshRenderer>();
+        mr.material             = mat;
+        mr.shadowCastingMode    = UnityEngine.Rendering.ShadowCastingMode.Off;
+        mr.receiveShadows       = false;
+        mr.lightProbeUsage      = UnityEngine.Rendering.LightProbeUsage.Off;
+        mr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
 
-        Debug.Log($"[BHV] Created child '{childName}' scale={scale} mat='{mat?.name}' shader='{mat?.shader?.name}'");
+        Debug.Log($"[BHV] Created '{childName}' under '{name}' scale={scale} shader='{mat?.shader?.name}'");
         return (go, mr);
     }
 
     // ─── Apply Alpha ──────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Sets color+alpha via MaterialPropertyBlock and optionally forces the GO active.
-    /// IMPORTANT: SetActive must be called AFTER SetPropertyBlock, otherwise
-    /// the block is lost on re-activation in some Unity versions.
-    /// </summary>
     private void ApplyAlpha(float alpha, Color baseColor, MeshRenderer rend,
                             MaterialPropertyBlock block, bool forceActive = false)
     {
         if (rend == null) return;
-
         Color c = baseColor;
         c.a = alpha;
-
-        // Write to both _Color (Built-in/Standard) and _BaseColor (URP Lit/Unlit)
         block.SetColor("_Color",     c);
         block.SetColor("_BaseColor", c);
         rend.SetPropertyBlock(block);
-
         if (!forceActive)
             rend.gameObject.SetActive(alpha > 0.004f);
     }
@@ -348,20 +366,136 @@ public class BossHitboxVisualizer : MonoBehaviour
         return colorDestroyed;
     }
 
+    // ─── Primitive Mesh Builders ──────────────────────────────────────────────
+
+    private static Mesh CreateBoxMesh(Vector3 size)
+    {
+        var mesh = new Mesh();
+        Vector3 h = size * 0.5f;
+        mesh.vertices = new Vector3[]
+        {
+            // Front
+            new(-h.x,-h.y, h.z), new( h.x,-h.y, h.z), new( h.x, h.y, h.z), new(-h.x, h.y, h.z),
+            // Back
+            new( h.x,-h.y,-h.z), new(-h.x,-h.y,-h.z), new(-h.x, h.y,-h.z), new( h.x, h.y,-h.z),
+            // Left
+            new(-h.x,-h.y,-h.z), new(-h.x,-h.y, h.z), new(-h.x, h.y, h.z), new(-h.x, h.y,-h.z),
+            // Right
+            new( h.x,-h.y, h.z), new( h.x,-h.y,-h.z), new( h.x, h.y,-h.z), new( h.x, h.y, h.z),
+            // Top
+            new(-h.x, h.y, h.z), new( h.x, h.y, h.z), new( h.x, h.y,-h.z), new(-h.x, h.y,-h.z),
+            // Bottom
+            new(-h.x,-h.y,-h.z), new( h.x,-h.y,-h.z), new( h.x,-h.y, h.z), new(-h.x,-h.y, h.z),
+        };
+        mesh.triangles = new int[]
+        {
+            0,1,2, 0,2,3,   4,5,6, 4,6,7,
+            8,9,10, 8,10,11, 12,13,14, 12,14,15,
+            16,17,18, 16,18,19, 20,21,22, 20,22,23
+        };
+        mesh.RecalculateNormals();
+        return mesh;
+    }
+
+    private static Mesh CreateSphereMesh(float radius, int longSegs, int latSegs)
+    {
+        var verts = new System.Collections.Generic.List<Vector3>();
+        var tris  = new System.Collections.Generic.List<int>();
+        for (int lat = 0; lat <= latSegs; lat++)
+        {
+            float theta = Mathf.PI * lat / latSegs;
+            for (int lon = 0; lon <= longSegs; lon++)
+            {
+                float phi = 2f * Mathf.PI * lon / longSegs;
+                verts.Add(new Vector3(
+                    radius * Mathf.Sin(theta) * Mathf.Cos(phi),
+                    radius * Mathf.Cos(theta),
+                    radius * Mathf.Sin(theta) * Mathf.Sin(phi)));
+            }
+        }
+        int w = longSegs + 1;
+        for (int lat = 0; lat < latSegs; lat++)
+            for (int lon = 0; lon < longSegs; lon++)
+            {
+                int a = lat*w+lon, b = a+w, c = a+1, d = b+1;
+                tris.AddRange(new[]{a,b,c, b,d,c});
+            }
+        var mesh = new Mesh { vertices = verts.ToArray(), triangles = tris.ToArray() };
+        mesh.RecalculateNormals();
+        return mesh;
+    }
+
+    private static Mesh CreateCapsuleMesh(float radius, float height, int segs)
+    {
+        // Simple capsule: two hemispheres + cylinder body
+        float bodyHalf = Mathf.Max(0f, height * 0.5f - radius);
+        var verts = new System.Collections.Generic.List<Vector3>();
+        var tris  = new System.Collections.Generic.List<int>();
+        int hemi = segs / 2;
+        // Top hemisphere
+        for (int lat = 0; lat <= hemi; lat++)
+        {
+            float theta = Mathf.PI * 0.5f * lat / hemi;
+            for (int lon = 0; lon <= segs; lon++)
+            {
+                float phi = 2f * Mathf.PI * lon / segs;
+                verts.Add(new Vector3(
+                    radius * Mathf.Cos(theta) * Mathf.Cos(phi),
+                    bodyHalf + radius * Mathf.Sin(theta),
+                    radius * Mathf.Cos(theta) * Mathf.Sin(phi)));
+            }
+        }
+        // Bottom hemisphere
+        for (int lat = 0; lat <= hemi; lat++)
+        {
+            float theta = Mathf.PI * 0.5f * lat / hemi;
+            for (int lon = 0; lon <= segs; lon++)
+            {
+                float phi = 2f * Mathf.PI * lon / segs;
+                verts.Add(new Vector3(
+                    radius * Mathf.Cos(theta) * Mathf.Cos(phi),
+                    -bodyHalf - radius * Mathf.Sin(theta),
+                    radius * Mathf.Cos(theta) * Mathf.Sin(phi)));
+            }
+        }
+        int w = segs + 1;
+        int total = (hemi + 1) * w;
+        for (int section = 0; section < 2; section++)
+        {
+            int off = section * total;
+            for (int lat = 0; lat < hemi; lat++)
+                for (int lon = 0; lon < segs; lon++)
+                {
+                    int a = off+lat*w+lon, b = a+w, c = a+1, d = b+1;
+                    tris.AddRange(section == 0 ? new[]{a,b,c,b,d,c} : new[]{a,c,b,b,c,d});
+                }
+        }
+        // Cylinder band connecting the two hemispheres
+        int topRing = hemi * w;
+        int botRing = total;
+        for (int lon = 0; lon < segs; lon++)
+        {
+            int a = topRing+lon, b = topRing+lon+1;
+            int c = botRing+lon, d = botRing+lon+1;
+            tris.AddRange(new[]{a,c,b, b,c,d});
+        }
+        var mesh = new Mesh { vertices = verts.ToArray(), triangles = tris.ToArray() };
+        mesh.RecalculateNormals();
+        return mesh;
+    }
+
     // ─── Editor Gizmos ────────────────────────────────────────────────────────
 
 #if UNITY_EDITOR
-    private void OnDrawGizmos()          { if ( alwaysShowGizmo) DrawHitboxGizmo(); }
-    private void OnDrawGizmosSelected()  { if (!alwaysShowGizmo) DrawHitboxGizmo(); }
+    private void OnDrawGizmos()         { if ( alwaysShowGizmo) DrawHitboxGizmo(); }
+    private void OnDrawGizmosSelected() { if (!alwaysShowGizmo) DrawHitboxGizmo(); }
 
     private void DrawHitboxGizmo()
     {
         var col = GetComponent<Collider>();
         if (col == null) return;
-
         Color solid = gizmoColor;
         Color wire  = new Color(gizmoColor.r, gizmoColor.g, gizmoColor.b, 1f);
-
         switch (col)
         {
             case BoxCollider box:
@@ -370,21 +504,18 @@ public class BossHitboxVisualizer : MonoBehaviour
                 Gizmos.color  = wire;  Gizmos.DrawWireCube(box.center, box.size);
                 Gizmos.matrix = Matrix4x4.identity;
                 break;
-
             case SphereCollider sphere:
-                float r = sphere.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y, transform.lossyScale.z);
+                float r  = sphere.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y, transform.lossyScale.z);
                 Vector3 wc = transform.TransformPoint(sphere.center);
                 Gizmos.color = solid; Gizmos.DrawSphere(wc, r);
                 Gizmos.color = wire;  Gizmos.DrawWireSphere(wc, r);
                 break;
-
             case CapsuleCollider capsule:
                 Vector3 cc = transform.TransformPoint(capsule.center);
                 float cr = capsule.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.z);
                 Gizmos.color = solid; Gizmos.DrawSphere(cc, cr);
                 Gizmos.color = wire;  Gizmos.DrawWireSphere(cc, cr);
                 break;
-
             default:
                 Gizmos.color = wire;
                 Gizmos.DrawWireSphere(transform.position, 0.3f);
