@@ -2,347 +2,391 @@ using UnityEngine;
 using System.Collections;
 
 /// <summary>
-/// BossHitboxVisualizer — Horizon Zero Dawn-style hitbox feedback without shaders or textures.
+/// BossHitboxVisualizer — HZD-style hitbox feedback, URP/HDRP/Built-in safe.
 ///
-/// HOW IT WORKS (no shaders needed):
-///   1. Each BossPart gets a secondary "overlay" MeshFilter+MeshRenderer child object.
-///   2. The overlay uses a BUILT-IN transparent/additive material (no asset required).
-///   3. On hit, the overlay pulses from fully opaque down to 0 alpha using a Coroutine.
-///   4. Color encodes hit severity: green → yellow → orange → red as HP% drops.
-///   5. A thin wireframe effect is faked via slightly scaled overlay + inverted normals trick.
-///   6. gizmos in the editor show hitbox volumes at all times (editor-only, zero runtime cost).
+/// DEBUG VERSION: every critical step logs to the Console so you can trace exactly
+/// where the pipeline breaks.  Filter Console by "[BHV]" to see only these messages.
 ///
 /// SETUP:
-///   - Add this component to the SAME GameObject that has BossPart.
-///   - Assign [overlayMesh] (usually the same mesh as the visible part, or a capsule/box approximation).
-///   - The script auto-creates a child overlay object at runtime.
-///   - Call NotifyHit(damage, currentHP, maxHP) from BossPart.TakeDamage after each hit.
+///   1. Add this component to the same GameObject as BossPart.
+///   2. Optionally assign Overlay Mesh in Inspector — if empty it auto-finds MeshFilter.
+///   3. Hit Play and shoot the boss — watch the Console for [BHV] lines.
 /// </summary>
 [RequireComponent(typeof(BossPart))]
 public class BossHitboxVisualizer : MonoBehaviour
 {
     // ─── Inspector ────────────────────────────────────────────────────────────
     [Header("Overlay Mesh")]
-    [Tooltip("The mesh used for the hit overlay. Usually the same mesh as the visible part.")]
+    [Tooltip("Mesh used for the hit overlay. Leave empty to auto-detect from MeshFilter.")]
     [SerializeField] private Mesh overlayMesh;
-    [Tooltip("Uniform scale applied to the overlay on top of the part's scale. Slightly > 1 ensures z-fight-free overlap.")]
     [SerializeField] private float overlayScaleBias = 1.02f;
 
     [Header("Pulse Settings")]
-    [Tooltip("Peak alpha of the overlay flash at the moment of impact.")]
-    [SerializeField] [Range(0f, 1f)] private float peakAlpha = 0.75f;
-    [Tooltip("How long (seconds) the flash takes to fade out.")]
-    [SerializeField] private float fadeDuration = 0.35f;
-    [Tooltip("Secondary slower glow that lingers after the flash.")]
-    [SerializeField] [Range(0f, 0.5f)] private float lingerAlpha = 0.18f;
-    [Tooltip("How long the linger glow stays before fading fully.")]
-    [SerializeField] private float lingerDuration = 1.2f;
+    [SerializeField] [Range(0f, 1f)] private float peakAlpha     = 0.75f;
+    [SerializeField]                 private float fadeDuration   = 0.35f;
+    [SerializeField] [Range(0f, 0.5f)] private float lingerAlpha  = 0.18f;
+    [SerializeField]                 private float lingerDuration  = 1.2f;
 
-    [Header("Color Encoding (HP % thresholds)")]
-    [Tooltip("Color when the part is at full/high health.")]
-    [SerializeField] private Color colorHealthy    = new Color(0.2f, 0.9f, 0.4f, 1f);   // green
-    [Tooltip("Color when the part HP drops below midThreshold.")]
-    [SerializeField] private Color colorDamaged    = new Color(1.0f, 0.8f, 0.1f, 1f);   // yellow
-    [Tooltip("Color when the part HP drops below lowThreshold.")]
-    [SerializeField] private Color colorCritical   = new Color(1.0f, 0.3f, 0.05f, 1f);  // orange-red
-    [Tooltip("Color when the part is about to be destroyed.")]
-    [SerializeField] private Color colorDestroyed  = new Color(1.0f, 0.05f, 0.05f, 1f); // deep red
+    [Header("Color Encoding")]
+    [SerializeField] private Color colorHealthy  = new Color(0.2f, 0.9f, 0.4f, 1f);
+    [SerializeField] private Color colorDamaged  = new Color(1.0f, 0.8f, 0.1f, 1f);
+    [SerializeField] private Color colorCritical = new Color(1.0f, 0.3f, 0.05f, 1f);
+    [SerializeField] private Color colorDestroyed= new Color(1.0f, 0.05f, 0.05f, 1f);
+    [SerializeField] [Range(0f,1f)] private float midThreshold  = 0.6f;
+    [SerializeField] [Range(0f,1f)] private float lowThreshold  = 0.3f;
+    [SerializeField] [Range(0f,1f)] private float critThreshold = 0.10f;
 
-    [SerializeField] [Range(0f, 1f)] private float midThreshold  = 0.6f;
-    [SerializeField] [Range(0f, 1f)] private float lowThreshold  = 0.3f;
-    [SerializeField] [Range(0f, 1f)] private float critThreshold = 0.10f;
-
-    [Header("Scan Line Effect (HZD flavour)")]
-    [Tooltip("Enable a second slightly-larger wireframe-ish overlay that mimics HZD's scan rim.")]
-    [SerializeField] private bool enableRimOverlay = true;
-    [SerializeField] [Range(1.01f, 1.15f)] private float rimScaleBias = 1.06f;
-    [SerializeField] [Range(0f, 1f)] private float rimAlphaMultiplier = 0.4f;
+    [Header("Rim Overlay")]
+    [SerializeField] private bool  enableRimOverlay    = true;
+    [SerializeField] [Range(1.01f, 1.15f)] private float rimScaleBias        = 1.06f;
+    [SerializeField] [Range(0f,1f)]        private float rimAlphaMultiplier  = 0.4f;
 
     [Header("Debug / Editor")]
-    [Tooltip("Show hitbox gizmos in Scene view even when not selected.")]
-    [SerializeField] private bool alwaysShowGizmo = true;
-    [SerializeField] private Color gizmoColor = new Color(0f, 1f, 0.5f, 0.25f);
+    [SerializeField] private bool  alwaysShowGizmo = true;
+    [SerializeField] private Color gizmoColor      = new Color(0f, 1f, 0.5f, 0.25f);
+    [Tooltip("Force the overlay to stay visible at this alpha permanently (0 = off). " +
+             "Use in Play mode to verify the mesh/material are working before testing hits.")]
+    [SerializeField] [Range(0f,1f)] private float debugForceAlpha = 0f;
 
     // ─── Private ──────────────────────────────────────────────────────────────
+    private GameObject   _overlayGO;
+    private GameObject   _rimGO;
     private MeshRenderer _overlayRenderer;
     private MeshRenderer _rimRenderer;
     private MaterialPropertyBlock _propBlock;
     private MaterialPropertyBlock _rimPropBlock;
-
     private Coroutine _flashCoroutine;
     private Coroutine _lingerCoroutine;
+    private bool _ready = false;
 
-    private static Material _sharedOverlayMat;
-    private static Material _sharedAdditiveMat;
+    // Per-instance materials so URP/HDRP property changes don't bleed across objects
+    private Material _overlayMat;
+    private Material _rimMat;
 
     // ─── Unity ────────────────────────────────────────────────────────────────
     private void Awake()
     {
-        EnsureSharedMaterials();
-        BuildOverlayObjects();
+        Debug.Log($"[BHV] Awake on '{name}'");
         _propBlock    = new MaterialPropertyBlock();
         _rimPropBlock = new MaterialPropertyBlock();
-        SetOverlayAlpha(0f, Color.white, _overlayRenderer, _propBlock);
+        _ready = BuildMaterials() && BuildOverlayObjects();
+        Debug.Log($"[BHV] Awake complete. _ready={_ready}");
+    }
+
+    private void Start()
+    {
+        if (!_ready)
+        {
+            Debug.LogError($"[BHV] '{name}' is NOT ready — overlay will not show. Check warnings above.");
+            return;
+        }
+
+        // Ensure overlays start invisible
+        ApplyAlpha(0f, Color.white, _overlayRenderer, _propBlock);
         if (_rimRenderer != null)
-            SetOverlayAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
+            ApplyAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
+
+        Debug.Log($"[BHV] '{name}' initialized OK. overlayGO='{_overlayGO?.name}'  rimGO='{_rimGO?.name}'");
+    }
+
+    private void Update()
+    {
+        // Debug knob: drag debugForceAlpha > 0 in Play mode to verify rendering
+        if (debugForceAlpha > 0f && _ready)
+        {
+            Color c = HPRatioToColor(1f - debugForceAlpha);
+            ApplyAlpha(debugForceAlpha, c, _overlayRenderer, _propBlock, forceActive: true);
+            if (_rimRenderer != null)
+                ApplyAlpha(debugForceAlpha * rimAlphaMultiplier, c, _rimRenderer, _rimPropBlock, forceActive: true);
+        }
     }
 
     // ─── Public API ───────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Call this from BossPart.TakeDamage to trigger the visual feedback.
-    /// </summary>
-    /// <param name="damage">Damage amount dealt this hit (used only for debug).</param>
-    /// <param name="currentHP">Current HP of the part after the hit.</param>
-    /// <param name="maxHP">Maximum HP of the part.</param>
     public void NotifyHit(float damage, float currentHP, float maxHP)
     {
-        float ratio = Mathf.Clamp01(currentHP / Mathf.Max(maxHP, 0.001f));
+        if (!_ready)
+        {
+            Debug.LogWarning($"[BHV] NotifyHit on '{name}' but _ready=false — overlay skipped.");
+            return;
+        }
+
+        float ratio    = Mathf.Clamp01(currentHP / Mathf.Max(maxHP, 0.001f));
         Color hitColor = HPRatioToColor(ratio);
+        Debug.Log($"[BHV] NotifyHit '{name}' | dmg={damage} hp={currentHP}/{maxHP} ratio={ratio:F2} color={hitColor}");
 
         if (_flashCoroutine  != null) StopCoroutine(_flashCoroutine);
         if (_lingerCoroutine != null) StopCoroutine(_lingerCoroutine);
-
         _flashCoroutine  = StartCoroutine(FlashPulse(hitColor));
         _lingerCoroutine = StartCoroutine(LingerGlow(hitColor));
     }
 
-    /// <summary>
-    /// Force-show the overlay at a given HP ratio permanently (e.g. for debug or scan mode).
-    /// </summary>
     public void ShowStatic(float hpRatio)
     {
+        if (!_ready) return;
         Color c = HPRatioToColor(hpRatio);
-        SetOverlayAlpha(lingerAlpha, c, _overlayRenderer, _propBlock);
+        ApplyAlpha(lingerAlpha, c, _overlayRenderer, _propBlock, forceActive: true);
         if (_rimRenderer != null)
-            SetOverlayAlpha(lingerAlpha * rimAlphaMultiplier, c, _rimRenderer, _rimPropBlock);
+            ApplyAlpha(lingerAlpha * rimAlphaMultiplier, c, _rimRenderer, _rimPropBlock, forceActive: true);
     }
 
-    /// <summary>
-    /// Hide all overlays immediately.
-    /// </summary>
     public void Hide()
     {
         if (_flashCoroutine  != null) StopCoroutine(_flashCoroutine);
         if (_lingerCoroutine != null) StopCoroutine(_lingerCoroutine);
-        SetOverlayAlpha(0f, Color.white, _overlayRenderer, _propBlock);
-        if (_rimRenderer != null)
-            SetOverlayAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
+        if (_overlayRenderer != null) ApplyAlpha(0f, Color.white, _overlayRenderer, _propBlock);
+        if (_rimRenderer     != null) ApplyAlpha(0f, Color.white, _rimRenderer, _rimPropBlock);
     }
 
     // ─── Coroutines ───────────────────────────────────────────────────────────
 
     private IEnumerator FlashPulse(Color hitColor)
     {
-        // Instant snap to peak alpha
-        SetOverlayAlpha(peakAlpha, hitColor, _overlayRenderer, _propBlock);
+        ApplyAlpha(peakAlpha, hitColor, _overlayRenderer, _propBlock, forceActive: true);
         if (_rimRenderer != null)
-            SetOverlayAlpha(peakAlpha * rimAlphaMultiplier, hitColor, _rimRenderer, _rimPropBlock);
+            ApplyAlpha(peakAlpha * rimAlphaMultiplier, hitColor, _rimRenderer, _rimPropBlock, forceActive: true);
 
         float elapsed = 0f;
         while (elapsed < fadeDuration)
         {
             elapsed += Time.deltaTime;
-            float t = elapsed / fadeDuration;
-            // Ease-out cubic: starts fast, decelerates
-            float easedT = 1f - Mathf.Pow(1f - t, 3f);
-            float alpha = Mathf.Lerp(peakAlpha, lingerAlpha, easedT);
-
-            SetOverlayAlpha(alpha, hitColor, _overlayRenderer, _propBlock);
+            float easedT = 1f - Mathf.Pow(1f - Mathf.Clamp01(elapsed / fadeDuration), 3f);
+            float alpha  = Mathf.Lerp(peakAlpha, lingerAlpha, easedT);
+            ApplyAlpha(alpha, hitColor, _overlayRenderer, _propBlock, forceActive: true);
             if (_rimRenderer != null)
-                SetOverlayAlpha(alpha * rimAlphaMultiplier, hitColor, _rimRenderer, _rimPropBlock);
+                ApplyAlpha(alpha * rimAlphaMultiplier, hitColor, _rimRenderer, _rimPropBlock, forceActive: true);
             yield return null;
         }
-
         _flashCoroutine = null;
     }
 
     private IEnumerator LingerGlow(Color hitColor)
     {
-        // Wait for flash to finish first
-        yield return new WaitForSeconds(fadeDuration);
-
-        // Hold linger
-        float holdTime = lingerDuration * 0.5f;
-        yield return new WaitForSeconds(holdTime);
-
-        // Fade out linger
+        yield return new WaitForSeconds(fadeDuration + lingerDuration * 0.5f);
         float elapsed = 0f;
-        float remainingFade = lingerDuration * 0.5f;
-        while (elapsed < remainingFade)
+        float fadeTime = lingerDuration * 0.5f;
+        while (elapsed < fadeTime)
         {
             elapsed += Time.deltaTime;
-            float alpha = Mathf.Lerp(lingerAlpha, 0f, elapsed / remainingFade);
-            SetOverlayAlpha(alpha, hitColor, _overlayRenderer, _propBlock);
+            float alpha = Mathf.Lerp(lingerAlpha, 0f, elapsed / fadeTime);
+            ApplyAlpha(alpha, hitColor, _overlayRenderer, _propBlock, forceActive: true);
             if (_rimRenderer != null)
-                SetOverlayAlpha(alpha * rimAlphaMultiplier, hitColor, _rimRenderer, _rimPropBlock);
+                ApplyAlpha(alpha * rimAlphaMultiplier, hitColor, _rimRenderer, _rimPropBlock, forceActive: true);
             yield return null;
         }
-
-        SetOverlayAlpha(0f, hitColor, _overlayRenderer, _propBlock);
+        ApplyAlpha(0f, hitColor, _overlayRenderer, _propBlock);
         if (_rimRenderer != null)
-            SetOverlayAlpha(0f, hitColor, _rimRenderer, _rimPropBlock);
-
+            ApplyAlpha(0f, hitColor, _rimRenderer, _rimPropBlock);
         _lingerCoroutine = null;
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    // ─── Build Helpers ────────────────────────────────────────────────────────
 
-    private Color HPRatioToColor(float ratio)
+    /// <summary>
+    /// Creates per-instance materials using the best available shader pipeline.
+    /// Priority: URP Unlit → Built-in Transparent → fallback pink (always visible).
+    /// </summary>
+    private bool BuildMaterials()
     {
-        if (ratio > midThreshold)
-            return Color.Lerp(colorDamaged,  colorHealthy, (ratio - midThreshold) / (1f - midThreshold));
-        if (ratio > lowThreshold)
-            return Color.Lerp(colorCritical, colorDamaged, (ratio - lowThreshold)  / (midThreshold  - lowThreshold));
-        if (ratio > critThreshold)
-            return Color.Lerp(colorDestroyed, colorCritical, (ratio - critThreshold) / (lowThreshold - critThreshold));
-        return colorDestroyed;
+        Shader overlayShader = FindBestTransparentShader();
+        if (overlayShader == null)
+        {
+            Debug.LogError("[BHV] Could not find ANY usable transparent shader. Materials will be null.");
+            return false;
+        }
+        Debug.Log($"[BHV] Using shader: '{overlayShader.name}'");
+
+        _overlayMat = new Material(overlayShader) { name = "BossHitbox_Overlay" };
+        ConfigureTransparentMaterial(_overlayMat, additive: false);
+
+        _rimMat = new Material(overlayShader) { name = "BossHitbox_Rim" };
+        ConfigureTransparentMaterial(_rimMat, additive: true);
+
+        return true;
     }
 
-    private void SetOverlayAlpha(float alpha, Color baseColor, MeshRenderer renderer, MaterialPropertyBlock block)
+    private static Shader FindBestTransparentShader()
     {
-        if (renderer == null) return;
-        Color c = baseColor;
-        c.a = alpha;
-        block.SetColor("_Color", c);
-        renderer.SetPropertyBlock(block);
-        // Disable the GO entirely when invisible to save draw calls
-        renderer.gameObject.SetActive(alpha > 0.005f);
+        // Try URP/HDRP unlit first (most projects in 2024+ use URP)
+        string[] candidates = new[]
+        {
+            "Universal Render Pipeline/Unlit",
+            "Unlit/Transparent",
+            "Unlit/Color",
+            "Sprites/Default",
+            "Standard",
+            "Legacy Shaders/Transparent/Diffuse"
+        };
+
+        foreach (var name in candidates)
+        {
+            var s = Shader.Find(name);
+            if (s != null)
+            {
+                Debug.Log($"[BHV] Found shader candidate: '{name}'");
+                return s;
+            }
+        }
+        return null;
     }
 
-    private void BuildOverlayObjects()
+    private static void ConfigureTransparentMaterial(Material mat, bool additive)
     {
+        // Universal property names that work across Built-in & URP shaders
+        mat.SetFloat("_Mode",    3);   // Standard: Transparent
+        mat.SetInt("_ZWrite",    0);
+        mat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        mat.SetInt("_DstBlend",  additive
+            ? (int)UnityEngine.Rendering.BlendMode.One                 // Additive
+            : (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);  // Alpha blend
+
+        // Standard shader keywords
+        mat.DisableKeyword("_ALPHATEST_ON");
+        mat.EnableKeyword("_ALPHABLEND_ON");
+        mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+
+        // URP surface type keywords
+        mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+
+        mat.renderQueue = additive ? 3001 : 3000;
+
+        // Set a visible default color (white semi-transparent) so it's obvious if rendering works
+        if (mat.HasProperty("_Color"))
+            mat.SetColor("_Color", new Color(1f, 1f, 1f, 0.8f));
+        if (mat.HasProperty("_BaseColor"))
+            mat.SetColor("_BaseColor", new Color(1f, 1f, 1f, 0.8f));
+    }
+
+    private bool BuildOverlayObjects()
+    {
+        // Auto-detect mesh
         if (overlayMesh == null)
         {
-            // Fallback: try to grab mesh from sibling MeshFilter
-            var mf = GetComponent<MeshFilter>();
-            if (mf == null) mf = GetComponentInChildren<MeshFilter>();
-            if (mf != null) overlayMesh = mf.sharedMesh;
+            var mf = GetComponent<MeshFilter>() ?? GetComponentInChildren<MeshFilter>();
+            if (mf != null)
+            {
+                overlayMesh = mf.sharedMesh;
+                Debug.Log($"[BHV] Auto-detected mesh '{overlayMesh?.name}' from MeshFilter on '{mf.gameObject.name}'");
+            }
         }
 
         if (overlayMesh == null)
         {
-            Debug.LogWarning($"[BossHitboxVisualizer] No overlay mesh found on {name}. Assign one in the Inspector.");
-            return;
+            Debug.LogWarning($"[BHV] '{name}': No mesh found. Assign Overlay Mesh in the Inspector.");
+            return false;
         }
 
-        _overlayRenderer = CreateOverlayChild("_HitOverlay", overlayScaleBias, _sharedOverlayMat);
+        Debug.Log($"[BHV] Building overlay objects for '{name}' using mesh '{overlayMesh.name}'");
+        (_overlayGO, _overlayRenderer) = CreateOverlayChild("_HitOverlay", overlayScaleBias, _overlayMat);
 
         if (enableRimOverlay)
-            _rimRenderer = CreateOverlayChild("_HitRim", rimScaleBias, _sharedAdditiveMat);
+            (_rimGO, _rimRenderer) = CreateOverlayChild("_HitRim", rimScaleBias, _rimMat);
+
+        return _overlayRenderer != null;
     }
 
-    private MeshRenderer CreateOverlayChild(string childName, float scaleBias, Material mat)
+    private (GameObject, MeshRenderer) CreateOverlayChild(string childName, float scale, Material mat)
     {
         var go = new GameObject(childName);
         go.transform.SetParent(transform, false);
         go.transform.localPosition = Vector3.zero;
         go.transform.localRotation = Quaternion.identity;
-        go.transform.localScale    = Vector3.one * scaleBias;
-        go.SetActive(false);
+        go.transform.localScale    = Vector3.one * scale;
+        go.layer = gameObject.layer;
+        // NOTE: keep active=true so SetPropertyBlock takes effect immediately;
+        // visibility is controlled by alpha via MaterialPropertyBlock.
+        go.SetActive(true);
 
-        var mf = go.AddComponent<MeshFilter>();
+        var mf       = go.AddComponent<MeshFilter>();
         mf.sharedMesh = overlayMesh;
 
-        var mr = go.AddComponent<MeshRenderer>();
-        mr.sharedMaterial = mat;
-        mr.shadowCastingMode  = UnityEngine.Rendering.ShadowCastingMode.Off;
-        mr.receiveShadows     = false;
-        mr.lightProbeUsage    = UnityEngine.Rendering.LightProbeUsage.Off;
-        mr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+        var mr                   = go.AddComponent<MeshRenderer>();
+        mr.material              = mat;   // instance assignment (not sharedMaterial)
+        mr.shadowCastingMode     = UnityEngine.Rendering.ShadowCastingMode.Off;
+        mr.receiveShadows        = false;
+        mr.lightProbeUsage       = UnityEngine.Rendering.LightProbeUsage.Off;
+        mr.reflectionProbeUsage  = UnityEngine.Rendering.ReflectionProbeUsage.Off;
 
-        return mr;
+        Debug.Log($"[BHV] Created child '{childName}' scale={scale} mat='{mat?.name}' shader='{mat?.shader?.name}'");
+        return (go, mr);
     }
 
-    /// <summary>
-    /// Ensures the two shared materials exist exactly once across all BossHitboxVisualizer instances.
-    /// Uses only Unity built-in shaders — no custom shader or texture asset required.
-    /// </summary>
-    private static void EnsureSharedMaterials()
-    {
-        if (_sharedOverlayMat == null)
-        {
-            // Standard transparent material — color set per-frame via MaterialPropertyBlock
-            _sharedOverlayMat = new Material(Shader.Find("Standard"));
-            _sharedOverlayMat.name = "BossHitbox_Overlay";
-            // Configure for transparency
-            _sharedOverlayMat.SetFloat("_Mode", 3);                         // Transparent blend mode
-            _sharedOverlayMat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            _sharedOverlayMat.SetInt("_DstBlend",  (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            _sharedOverlayMat.SetInt("_ZWrite",    0);
-            _sharedOverlayMat.DisableKeyword("_ALPHATEST_ON");
-            _sharedOverlayMat.EnableKeyword("_ALPHABLEND_ON");
-            _sharedOverlayMat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
-            _sharedOverlayMat.renderQueue = 3000;
-            _sharedOverlayMat.color = Color.white;
-        }
+    // ─── Apply Alpha ──────────────────────────────────────────────────────────
 
-        if (_sharedAdditiveMat == null)
-        {
-            // Additive material for the rim glow — creates a "bloom" impression without post-processing
-            _sharedAdditiveMat = new Material(Shader.Find("Particles/Additive"));
-            if (_sharedAdditiveMat.shader == null || !_sharedAdditiveMat.shader.isSupported)
-            {
-                // Fallback if Particles/Additive not available (URP/HDRP projects)
-                _sharedAdditiveMat = new Material(Shader.Find("Standard"));
-                _sharedAdditiveMat.SetFloat("_Mode", 3);
-                _sharedAdditiveMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                _sharedAdditiveMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.One);  // Additive
-                _sharedAdditiveMat.SetInt("_ZWrite",   0);
-                _sharedAdditiveMat.renderQueue = 3001;
-            }
-            _sharedAdditiveMat.name = "BossHitbox_Rim";
-            _sharedAdditiveMat.color = Color.white;
-        }
+    /// <summary>
+    /// Sets color+alpha via MaterialPropertyBlock and optionally forces the GO active.
+    /// IMPORTANT: SetActive must be called AFTER SetPropertyBlock, otherwise
+    /// the block is lost on re-activation in some Unity versions.
+    /// </summary>
+    private void ApplyAlpha(float alpha, Color baseColor, MeshRenderer rend,
+                            MaterialPropertyBlock block, bool forceActive = false)
+    {
+        if (rend == null) return;
+
+        Color c = baseColor;
+        c.a = alpha;
+
+        // Write to both _Color (Built-in/Standard) and _BaseColor (URP Lit/Unlit)
+        block.SetColor("_Color",     c);
+        block.SetColor("_BaseColor", c);
+        rend.SetPropertyBlock(block);
+
+        if (!forceActive)
+            rend.gameObject.SetActive(alpha > 0.004f);
+    }
+
+    // ─── Color Encoding ───────────────────────────────────────────────────────
+
+    private Color HPRatioToColor(float ratio)
+    {
+        if (ratio > midThreshold)
+            return Color.Lerp(colorDamaged,   colorHealthy,  (ratio - midThreshold) / (1f - midThreshold));
+        if (ratio > lowThreshold)
+            return Color.Lerp(colorCritical,  colorDamaged,  (ratio - lowThreshold)  / (midThreshold - lowThreshold));
+        if (ratio > critThreshold)
+            return Color.Lerp(colorDestroyed, colorCritical, (ratio - critThreshold) / (lowThreshold  - critThreshold));
+        return colorDestroyed;
     }
 
     // ─── Editor Gizmos ────────────────────────────────────────────────────────
 
 #if UNITY_EDITOR
-    private void OnDrawGizmos()
-    {
-        if (alwaysShowGizmo) DrawHitboxGizmo();
-    }
-
-    private void OnDrawGizmosSelected()
-    {
-        if (!alwaysShowGizmo) DrawHitboxGizmo();
-    }
+    private void OnDrawGizmos()          { if ( alwaysShowGizmo) DrawHitboxGizmo(); }
+    private void OnDrawGizmosSelected()  { if (!alwaysShowGizmo) DrawHitboxGizmo(); }
 
     private void DrawHitboxGizmo()
     {
         var col = GetComponent<Collider>();
         if (col == null) return;
 
-        Gizmos.color = gizmoColor;
+        Color solid = gizmoColor;
+        Color wire  = new Color(gizmoColor.r, gizmoColor.g, gizmoColor.b, 1f);
 
         switch (col)
         {
             case BoxCollider box:
                 Gizmos.matrix = Matrix4x4.TRS(transform.position, transform.rotation, transform.lossyScale);
-                Gizmos.DrawCube(box.center, box.size);
-                Gizmos.color = new Color(gizmoColor.r, gizmoColor.g, gizmoColor.b, 1f);
-                Gizmos.DrawWireCube(box.center, box.size);
+                Gizmos.color  = solid; Gizmos.DrawCube(box.center, box.size);
+                Gizmos.color  = wire;  Gizmos.DrawWireCube(box.center, box.size);
+                Gizmos.matrix = Matrix4x4.identity;
                 break;
 
             case SphereCollider sphere:
-                float worldRadius = sphere.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y, transform.lossyScale.z);
-                Gizmos.DrawSphere(transform.TransformPoint(sphere.center), worldRadius);
-                Gizmos.color = new Color(gizmoColor.r, gizmoColor.g, gizmoColor.b, 1f);
-                Gizmos.DrawWireSphere(transform.TransformPoint(sphere.center), worldRadius);
+                float r = sphere.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.y, transform.lossyScale.z);
+                Vector3 wc = transform.TransformPoint(sphere.center);
+                Gizmos.color = solid; Gizmos.DrawSphere(wc, r);
+                Gizmos.color = wire;  Gizmos.DrawWireSphere(wc, r);
                 break;
 
             case CapsuleCollider capsule:
-                // Unity has no built-in Gizmos.DrawCapsule; approximate with sphere + wire
-                Vector3 worldCenter = transform.TransformPoint(capsule.center);
-                float wRadius = capsule.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.z);
-                Gizmos.DrawSphere(worldCenter, wRadius);
-                Gizmos.color = new Color(gizmoColor.r, gizmoColor.g, gizmoColor.b, 1f);
-                Gizmos.DrawWireSphere(worldCenter, wRadius);
+                Vector3 cc = transform.TransformPoint(capsule.center);
+                float cr = capsule.radius * Mathf.Max(transform.lossyScale.x, transform.lossyScale.z);
+                Gizmos.color = solid; Gizmos.DrawSphere(cc, cr);
+                Gizmos.color = wire;  Gizmos.DrawWireSphere(cc, cr);
                 break;
 
             default:
-                // Generic: just draw a wire sphere at part pivot
+                Gizmos.color = wire;
                 Gizmos.DrawWireSphere(transform.position, 0.3f);
                 break;
         }
