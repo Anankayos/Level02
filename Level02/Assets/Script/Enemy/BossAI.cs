@@ -69,10 +69,8 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     private NavMeshAgent _agent;
     private Transform    _player;
 
-    // FIX: two independent timers — burst shooting and bomb throwing
-    // no longer share a timestamp, so one can never block the other.
-    private float _lastFireTime;   // used ONLY by TryFireBurst
-    private float _lastThrowTime;  // used ONLY by TryThrowExplosive
+    private float _lastFireTime;
+    private float _lastThrowTime;
 
     private int          _partsDestroyed     = 0;
     private int          _partsAlive         = 5;
@@ -100,7 +98,17 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
     private void OnDestroy() => BossPart.OnPartDestroyed -= HandlePartDestroyed;
 
-    private void Start() => _currentHealth = maxHealth;
+    private void Start()
+    {
+        _currentHealth = maxHealth;
+
+        // FIX 1: stop the agent immediately so the boss never moves before
+        // EnterEngage is called. Without this the NavMeshAgent is active and
+        // tries to navigate toward whatever its last destination was (often
+        // the player position sampled at scene load).
+        _agent.isStopped = true;
+        _agent.ResetPath();
+    }
 
     // ───────────────────────────────────────────────────────────────────────
     //  Update
@@ -119,6 +127,12 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         switch (_state)
         {
             case BossState.Idle:
+                // FIX 1: keep agent stopped while Idle so boss never drifts
+                if (_agent.isActiveAndEnabled && !_agent.isStopped)
+                {
+                    _agent.isStopped = true;
+                    _agent.ResetPath();
+                }
                 if (dist < engageDistance) EnterEngage();
                 break;
 
@@ -150,10 +164,12 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         if (_state == BossState.Throwing) return;
 
         Vector3 pos = transform.position;
-        if (Mathf.Abs(pos.z - lockedZ) > 0.15f)
+        if (Mathf.Abs(pos.z - lockedZ) > 0.05f)
         {
-            Debug.Log($"[Boss] EnforceZAxis: correcting Z drift ({pos.z:F3} → {lockedZ:F3})");
-            _agent.Warp(new Vector3(pos.x, pos.y, lockedZ));
+            // FIX 2: tighter threshold (0.05 vs 0.15) and warp Y from spawn
+            // so NavMesh rounding never accumulates vertical drift either.
+            Debug.Log($"[Boss] EnforceZAxis: correcting Z ({pos.z:F3} → {lockedZ:F3})");
+            _agent.Warp(new Vector3(pos.x, _spawnPos.y, lockedZ));
         }
     }
 
@@ -162,10 +178,14 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         if (!_agent.isActiveAndEnabled || !_agent.isOnNavMesh) return;
         if (_state == BossState.Throwing) return;
 
-        float targetX = Mathf.Clamp(_player.position.x,
-                                     _spawnPos.x - strafeRange,
-                                     _spawnPos.x + strafeRange);
-        _agent.SetDestination(new Vector3(targetX, transform.position.y, lockedZ));
+        float targetX = Mathf.Clamp(
+            _player.position.x,
+            _spawnPos.x - strafeRange,
+            _spawnPos.x + strafeRange);
+
+        // FIX 2: destination always uses lockedZ and spawn Y — never
+        // transform.position.y which can drift after a Warp.
+        _agent.SetDestination(new Vector3(targetX, _spawnPos.y, lockedZ));
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -183,7 +203,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
                 if (part != null) part.HighlightPart();
         }
 
-        _state = BossState.Engaging;
+        _state           = BossState.Engaging;
         _agent.speed     = chaseSpeed;
         _agent.isStopped = false;
         bossAnimator?.SetBool("isWalking", true);
@@ -193,8 +213,6 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     {
         float hpPct = _currentHealth / maxHealth;
         if (hpPct > patrolHealthPct) return;
-        // FIX: guard uses _lastFireTime (shoot timer only).
-        // Previously this was accidentally gated on the throw timer too.
         if (Time.time - _lastFireTime < 2f) return;
         StartPatrolCycle();
     }
@@ -211,7 +229,17 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
             return;
         }
 
-        if (_patrolCoroutine != null) StopCoroutine(_patrolCoroutine);
+        if (_patrolCoroutine != null)
+        {
+            StopCoroutine(_patrolCoroutine);
+            _patrolCoroutine = null;
+        }
+
+        // FIX 3: advance the index HERE, before starting the new coroutine,
+        // so re-triggering patrol (part destroyed, throw finished) never
+        // re-sends the boss to the point it just came from, and never causes
+        // a snap because remainingDistance is already ~0 at that point.
+        _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
 
         _state           = BossState.Patrolling;
         _agent.speed     = patrolSpeed;
@@ -228,15 +256,20 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
             Debug.Log($"[Boss] Patrol → point {_currentPatrolIndex}: {targetPoint.position}");
 
             _agent.isStopped = false;
-            _agent.SetDestination(targetPoint.position);
+            _agent.SetDestination(new Vector3(
+                targetPoint.position.x,
+                _spawnPos.y,          // FIX 2: always use spawn Y for patrol too
+                targetPoint.position.z));
 
+            // Wait a few frames for the NavMesh to compute the path
+            // before we start checking remainingDistance.
             yield return null;
             yield return null;
             yield return null;
 
             yield return new WaitUntil(() =>
                 _state == BossState.Dead ||
-                (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance));
+                (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.1f));
 
             if (_state == BossState.Dead) yield break;
 
@@ -256,19 +289,21 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
             if (_state == BossState.Dead) yield break;
 
+            // FIX 3: advance index at the END of the wait, after the boss
+            // has actually stood still for timeAtPoint seconds.
             _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
             bossAnimator?.SetBool("isWalking", true);
         }
     }
 
     // ───────────────────────────────────────────────────────────────────────
-    //  Shooting  —  _lastFireTime is ONLY touched here
+    //  Shooting
     // ───────────────────────────────────────────────────────────────────────
     private void TryFireBurst()
     {
         if (Time.time - _lastFireTime < fireRate) return;
         if (!HasLineOfSight()) return;
-        _lastFireTime = Time.time;   // shoot timer — does NOT affect throw
+        _lastFireTime = Time.time;
         StartCoroutine(FireBurstCoroutine());
     }
 
@@ -323,15 +358,15 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     }
 
     // ───────────────────────────────────────────────────────────────────────
-    //  Explosives  —  _lastThrowTime is ONLY touched here
+    //  Explosives
     // ───────────────────────────────────────────────────────────────────────
     private void TryThrowExplosive()
     {
         if (_partsDestroyed < grenadesUnlockAtPartsDestroyed) return;
-        if (Time.time - _lastThrowTime < throwCooldown)       return;  // throw timer — does NOT affect burst
+        if (Time.time - _lastThrowTime < throwCooldown)       return;
         if (_state == BossState.Throwing)                     return;
 
-        _lastThrowTime = Time.time;   // throw timer — does NOT affect burst
+        _lastThrowTime = Time.time;
         if (_throwCoroutine != null) StopCoroutine(_throwCoroutine);
         _throwCoroutine = StartCoroutine(ThrowCoroutine());
     }
@@ -346,28 +381,21 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         yield return new WaitForSeconds(0.6f);
 
         if (explosivePrefab == null)
-        {
             Debug.LogError("[Boss] explosivePrefab not assigned in Inspector.");
-        }
         else if (throwOrigin == null)
-        {
             Debug.LogError("[Boss] throwOrigin not assigned in Inspector.");
-        }
         else
         {
             Vector3 targetPos = _player.position;
             var go   = Instantiate(explosivePrefab, throwOrigin.position, Quaternion.identity);
             var bomb = go.GetComponent<BossExplosive>();
-
             if (bomb != null)
             {
                 bomb.Launch(targetPos);
                 Debug.Log($"[Boss] Bomb thrown toward {targetPos}");
             }
             else
-            {
                 Debug.LogError("[Boss] explosivePrefab missing BossExplosive component!");
-            }
         }
 
         yield return new WaitForSeconds(0.4f);
@@ -497,7 +525,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         }
 
         transform.rotation = _spawnRot;
-        _agent.isStopped   = false;
+        _agent.isStopped   = true;   // keep stopped until fight re-triggers
 
         foreach (var part in parts) part.ResetPart();
 
