@@ -108,7 +108,6 @@
     <Compile Include="Assets\Script\Tutorial\TutorialDirectCaller.cs" />
     <Compile Include="Assets\Script\Enemy\BossAI.cs" />
     <Compile Include="Assets\Script\Checkpoint\Checkpoint.cs" />
-    <Compile Include="Assets\Script\Enemy\BossHitboxVisualizer.cs" />
     <Compile Include="Assets\Script\Checkpoint\PersistentPickup.cs" />
     <Compile Include="Assets\Script\Tutorial\TutorialManager.cs" />
     <Compile Include="Assets\Script\GameEvents.cs" />
