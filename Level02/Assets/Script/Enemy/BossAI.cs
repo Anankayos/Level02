@@ -37,9 +37,6 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     [SerializeField] private float chaseSpeed     = 4f;
     [SerializeField] private float patrolSpeed    = 7f;
     [SerializeField] private float engageDistance = 20f;
-    // How close (XZ plane) the boss must get to a patrol point to consider
-    // it "reached". Must be > agent.stoppingDistance (default 0).
-    [SerializeField] private float patrolArrivalRadius = 1.2f;
 
     [Header("Patrol Points")]
     [Tooltip("Drag 5 empty GameObjects here for the boss to move between.")]
@@ -72,8 +69,10 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     private NavMeshAgent _agent;
     private Transform    _player;
 
-    private float _lastFireTime;
-    private float _lastThrowTime;
+    // FIX: two independent timers — burst shooting and bomb throwing
+    // no longer share a timestamp, so one can never block the other.
+    private float _lastFireTime;   // used ONLY by TryFireBurst
+    private float _lastThrowTime;  // used ONLY by TryThrowExplosive
 
     private int          _partsDestroyed     = 0;
     private int          _partsAlive         = 5;
@@ -101,12 +100,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
     private void OnDestroy() => BossPart.OnPartDestroyed -= HandlePartDestroyed;
 
-    private void Start()
-    {
-        _currentHealth   = maxHealth;
-        _agent.isStopped = true;
-        _agent.ResetPath();
-    }
+    private void Start() => _currentHealth = maxHealth;
 
     // ───────────────────────────────────────────────────────────────────────
     //  Update
@@ -117,19 +111,14 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
         if (Time.frameCount % 60 == 0)
             Debug.Log($"[Boss] State={_state} | HP={_currentHealth:F0} | "
-                    + $"PatrolIdx={_currentPatrolIndex} | "
-                    + $"PartsDestroyed={_partsDestroyed}");
+                    + $"PartsDestroyed={_partsDestroyed} | "
+                    + $"BombsUnlocked={_partsDestroyed >= grenadesUnlockAtPartsDestroyed}");
 
         float dist = Vector3.Distance(transform.position, _player.position);
 
         switch (_state)
         {
             case BossState.Idle:
-                if (_agent.isActiveAndEnabled && !_agent.isStopped)
-                {
-                    _agent.isStopped = true;
-                    _agent.ResetPath();
-                }
                 if (dist < engageDistance) EnterEngage();
                 break;
 
@@ -161,10 +150,10 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         if (_state == BossState.Throwing) return;
 
         Vector3 pos = transform.position;
-        if (Mathf.Abs(pos.z - lockedZ) > 0.05f)
+        if (Mathf.Abs(pos.z - lockedZ) > 0.15f)
         {
-            Debug.Log($"[Boss] EnforceZAxis: correcting Z ({pos.z:F3} → {lockedZ:F3})");
-            _agent.Warp(new Vector3(pos.x, _spawnPos.y, lockedZ));
+            Debug.Log($"[Boss] EnforceZAxis: correcting Z drift ({pos.z:F3} → {lockedZ:F3})");
+            _agent.Warp(new Vector3(pos.x, pos.y, lockedZ));
         }
     }
 
@@ -173,12 +162,10 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         if (!_agent.isActiveAndEnabled || !_agent.isOnNavMesh) return;
         if (_state == BossState.Throwing) return;
 
-        float targetX = Mathf.Clamp(
-            _player.position.x,
-            _spawnPos.x - strafeRange,
-            _spawnPos.x + strafeRange);
-
-        _agent.SetDestination(new Vector3(targetX, _spawnPos.y, lockedZ));
+        float targetX = Mathf.Clamp(_player.position.x,
+                                     _spawnPos.x - strafeRange,
+                                     _spawnPos.x + strafeRange);
+        _agent.SetDestination(new Vector3(targetX, transform.position.y, lockedZ));
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -196,7 +183,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
                 if (part != null) part.HighlightPart();
         }
 
-        _state           = BossState.Engaging;
+        _state = BossState.Engaging;
         _agent.speed     = chaseSpeed;
         _agent.isStopped = false;
         bossAnimator?.SetBool("isWalking", true);
@@ -206,6 +193,8 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     {
         float hpPct = _currentHealth / maxHealth;
         if (hpPct > patrolHealthPct) return;
+        // FIX: guard uses _lastFireTime (shoot timer only).
+        // Previously this was accidentally gated on the throw timer too.
         if (Time.time - _lastFireTime < 2f) return;
         StartPatrolCycle();
     }
@@ -222,16 +211,8 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
             return;
         }
 
-        if (_patrolCoroutine != null)
-        {
-            StopCoroutine(_patrolCoroutine);
-            _patrolCoroutine = null;
-        }
+        if (_patrolCoroutine != null) StopCoroutine(_patrolCoroutine);
 
-        // NOTE: index is NOT advanced here anymore.
-        // The coroutine owns the full advance-then-move cycle so there is
-        // exactly ONE index increment per point, regardless of how many
-        // times StartPatrolCycle is called mid-fight.
         _state           = BossState.Patrolling;
         _agent.speed     = patrolSpeed;
         _agent.isStopped = false;
@@ -243,40 +224,19 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     {
         while (_state != BossState.Dead)
         {
-            // Advance to the next point at the TOP of the loop so every
-            // fresh coroutine start (including mid-fight re-triggers) always
-            // heads somewhere new.
-            _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
-
-            Transform target = patrolPoints[_currentPatrolIndex];
-            Vector3   dest   = new Vector3(target.position.x, _spawnPos.y, target.position.z);
-
-            Debug.Log($"[Boss] Patrol → point {_currentPatrolIndex}: {dest}");
+            Transform targetPoint = patrolPoints[_currentPatrolIndex];
+            Debug.Log($"[Boss] Patrol → point {_currentPatrolIndex}: {targetPoint.position}");
 
             _agent.isStopped = false;
-            _agent.SetDestination(dest);
+            _agent.SetDestination(targetPoint.position);
 
-            // Wait at least 0.3 s before checking arrival so the agent has
-            // time to start moving and remainingDistance becomes meaningful.
-            float minTravelTime = 0.3f;
-            float elapsed       = 0f;
-            while (elapsed < minTravelTime && _state != BossState.Dead)
-            {
-                elapsed += Time.deltaTime;
-                yield return null;
-            }
-            if (_state == BossState.Dead) yield break;
+            yield return null;
+            yield return null;
+            yield return null;
 
-            // Arrival check: use direct world distance on the XZ plane only.
-            // This is immune to NavMesh path-pending race conditions that
-            // make remainingDistance return 0 prematurely.
             yield return new WaitUntil(() =>
-            {
-                if (_state == BossState.Dead) return true;
-                Vector3 flat      = new Vector3(transform.position.x, 0f, transform.position.z);
-                Vector3 flatDest  = new Vector3(dest.x,               0f, dest.z);
-                return Vector3.Distance(flat, flatDest) <= patrolArrivalRadius;
-            });
+                _state == BossState.Dead ||
+                (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance));
 
             if (_state == BossState.Dead) yield break;
 
@@ -284,7 +244,6 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
             _agent.isStopped = true;
             bossAnimator?.SetBool("isWalking", false);
 
-            // Stand still, shoot/throw, face player for timeAtPoint seconds.
             float timer = 0f;
             while (timer < timeAtPoint && _state != BossState.Dead)
             {
@@ -297,19 +256,19 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
             if (_state == BossState.Dead) yield break;
 
+            _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
             bossAnimator?.SetBool("isWalking", true);
-            // Index will be advanced at the top of the next loop iteration.
         }
     }
 
     // ───────────────────────────────────────────────────────────────────────
-    //  Shooting
+    //  Shooting  —  _lastFireTime is ONLY touched here
     // ───────────────────────────────────────────────────────────────────────
     private void TryFireBurst()
     {
         if (Time.time - _lastFireTime < fireRate) return;
         if (!HasLineOfSight()) return;
-        _lastFireTime = Time.time;
+        _lastFireTime = Time.time;   // shoot timer — does NOT affect throw
         StartCoroutine(FireBurstCoroutine());
     }
 
@@ -364,15 +323,15 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     }
 
     // ───────────────────────────────────────────────────────────────────────
-    //  Explosives
+    //  Explosives  —  _lastThrowTime is ONLY touched here
     // ───────────────────────────────────────────────────────────────────────
     private void TryThrowExplosive()
     {
         if (_partsDestroyed < grenadesUnlockAtPartsDestroyed) return;
-        if (Time.time - _lastThrowTime < throwCooldown)       return;
+        if (Time.time - _lastThrowTime < throwCooldown)       return;  // throw timer — does NOT affect burst
         if (_state == BossState.Throwing)                     return;
 
-        _lastThrowTime = Time.time;
+        _lastThrowTime = Time.time;   // throw timer — does NOT affect burst
         if (_throwCoroutine != null) StopCoroutine(_throwCoroutine);
         _throwCoroutine = StartCoroutine(ThrowCoroutine());
     }
@@ -387,21 +346,28 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         yield return new WaitForSeconds(0.6f);
 
         if (explosivePrefab == null)
+        {
             Debug.LogError("[Boss] explosivePrefab not assigned in Inspector.");
+        }
         else if (throwOrigin == null)
+        {
             Debug.LogError("[Boss] throwOrigin not assigned in Inspector.");
+        }
         else
         {
             Vector3 targetPos = _player.position;
             var go   = Instantiate(explosivePrefab, throwOrigin.position, Quaternion.identity);
             var bomb = go.GetComponent<BossExplosive>();
+
             if (bomb != null)
             {
                 bomb.Launch(targetPos);
                 Debug.Log($"[Boss] Bomb thrown toward {targetPos}");
             }
             else
+            {
                 Debug.LogError("[Boss] explosivePrefab missing BossExplosive component!");
+            }
         }
 
         yield return new WaitForSeconds(0.4f);
@@ -531,7 +497,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         }
 
         transform.rotation = _spawnRot;
-        _agent.isStopped   = true;
+        _agent.isStopped   = false;
 
         foreach (var part in parts) part.ResetPart();
 
