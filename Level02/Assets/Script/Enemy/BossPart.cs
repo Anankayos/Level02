@@ -13,6 +13,9 @@ public class BossPart : MonoBehaviour, IDamageable
     [Header("Visuals")]
     [SerializeField] private MeshRenderer partRenderer;
     [SerializeField] private Color targetColor = Color.red;
+
+    // Cached reference — auto-resolved at startup, no manual wiring needed in Inspector
+    private BossHitboxVisualizer _hitboxVisualizer;
     
     private Color _originalColor;
 
@@ -26,6 +29,9 @@ public class BossPart : MonoBehaviour, IDamageable
         _currentHealth = partHealth;
         if (partRenderer != null)
             _originalColor = partRenderer.material.color;
+
+        // BossHitboxVisualizer is optional: if the component exists on this GameObject, use it
+        _hitboxVisualizer = GetComponent<BossHitboxVisualizer>();
     }
 
     public bool IsAlive => !IsDestroyed;
@@ -37,6 +43,9 @@ public class BossPart : MonoBehaviour, IDamageable
         _currentHealth -= amount;
         Debug.Log($"[BossPart] {partName} hit for {amount}. HP: {_currentHealth}");
 
+        // Trigger the HZD-style visual feedback
+        _hitboxVisualizer?.NotifyHit(amount, _currentHealth, partHealth);
+
         if (_currentHealth <= 0)
             DestroyPart();
     }
@@ -44,6 +53,9 @@ public class BossPart : MonoBehaviour, IDamageable
     private void DestroyPart()
     {
         IsDestroyed = true;
+
+        // Hide hitbox overlay when the part is destroyed
+        _hitboxVisualizer?.Hide();
 
         if (destroyedVFX) Instantiate(destroyedVFX, transform.position, Quaternion.identity);
         if (intactMesh)    intactMesh.SetActive(false);
@@ -78,5 +90,8 @@ public class BossPart : MonoBehaviour, IDamageable
             partRenderer.enabled = true;
             partRenderer.material.color = _originalColor;
         }
+
+        // Reset the hitbox overlay too
+        _hitboxVisualizer?.Hide();
     }
 }
