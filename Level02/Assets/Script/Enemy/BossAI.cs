@@ -37,6 +37,9 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     [SerializeField] private float chaseSpeed     = 4f;
     [SerializeField] private float patrolSpeed    = 7f;
     [SerializeField] private float engageDistance = 20f;
+    // How close (XZ plane) the boss must get to a patrol point to consider
+    // it "reached". Must be > agent.stoppingDistance (default 0).
+    [SerializeField] private float patrolArrivalRadius = 1.2f;
 
     [Header("Patrol Points")]
     [Tooltip("Drag 5 empty GameObjects here for the boss to move between.")]
@@ -100,12 +103,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
     private void Start()
     {
-        _currentHealth = maxHealth;
-
-        // FIX 1: stop the agent immediately so the boss never moves before
-        // EnterEngage is called. Without this the NavMeshAgent is active and
-        // tries to navigate toward whatever its last destination was (often
-        // the player position sampled at scene load).
+        _currentHealth   = maxHealth;
         _agent.isStopped = true;
         _agent.ResetPath();
     }
@@ -119,15 +117,14 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
         if (Time.frameCount % 60 == 0)
             Debug.Log($"[Boss] State={_state} | HP={_currentHealth:F0} | "
-                    + $"PartsDestroyed={_partsDestroyed} | "
-                    + $"BombsUnlocked={_partsDestroyed >= grenadesUnlockAtPartsDestroyed}");
+                    + $"PatrolIdx={_currentPatrolIndex} | "
+                    + $"PartsDestroyed={_partsDestroyed}");
 
         float dist = Vector3.Distance(transform.position, _player.position);
 
         switch (_state)
         {
             case BossState.Idle:
-                // FIX 1: keep agent stopped while Idle so boss never drifts
                 if (_agent.isActiveAndEnabled && !_agent.isStopped)
                 {
                     _agent.isStopped = true;
@@ -166,8 +163,6 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         Vector3 pos = transform.position;
         if (Mathf.Abs(pos.z - lockedZ) > 0.05f)
         {
-            // FIX 2: tighter threshold (0.05 vs 0.15) and warp Y from spawn
-            // so NavMesh rounding never accumulates vertical drift either.
             Debug.Log($"[Boss] EnforceZAxis: correcting Z ({pos.z:F3} → {lockedZ:F3})");
             _agent.Warp(new Vector3(pos.x, _spawnPos.y, lockedZ));
         }
@@ -183,8 +178,6 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
             _spawnPos.x - strafeRange,
             _spawnPos.x + strafeRange);
 
-        // FIX 2: destination always uses lockedZ and spawn Y — never
-        // transform.position.y which can drift after a Warp.
         _agent.SetDestination(new Vector3(targetX, _spawnPos.y, lockedZ));
     }
 
@@ -235,12 +228,10 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
             _patrolCoroutine = null;
         }
 
-        // FIX 3: advance the index HERE, before starting the new coroutine,
-        // so re-triggering patrol (part destroyed, throw finished) never
-        // re-sends the boss to the point it just came from, and never causes
-        // a snap because remainingDistance is already ~0 at that point.
-        _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
-
+        // NOTE: index is NOT advanced here anymore.
+        // The coroutine owns the full advance-then-move cycle so there is
+        // exactly ONE index increment per point, regardless of how many
+        // times StartPatrolCycle is called mid-fight.
         _state           = BossState.Patrolling;
         _agent.speed     = patrolSpeed;
         _agent.isStopped = false;
@@ -252,24 +243,40 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
     {
         while (_state != BossState.Dead)
         {
-            Transform targetPoint = patrolPoints[_currentPatrolIndex];
-            Debug.Log($"[Boss] Patrol → point {_currentPatrolIndex}: {targetPoint.position}");
+            // Advance to the next point at the TOP of the loop so every
+            // fresh coroutine start (including mid-fight re-triggers) always
+            // heads somewhere new.
+            _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
+
+            Transform target = patrolPoints[_currentPatrolIndex];
+            Vector3   dest   = new Vector3(target.position.x, _spawnPos.y, target.position.z);
+
+            Debug.Log($"[Boss] Patrol → point {_currentPatrolIndex}: {dest}");
 
             _agent.isStopped = false;
-            _agent.SetDestination(new Vector3(
-                targetPoint.position.x,
-                _spawnPos.y,          // FIX 2: always use spawn Y for patrol too
-                targetPoint.position.z));
+            _agent.SetDestination(dest);
 
-            // Wait a few frames for the NavMesh to compute the path
-            // before we start checking remainingDistance.
-            yield return null;
-            yield return null;
-            yield return null;
+            // Wait at least 0.3 s before checking arrival so the agent has
+            // time to start moving and remainingDistance becomes meaningful.
+            float minTravelTime = 0.3f;
+            float elapsed       = 0f;
+            while (elapsed < minTravelTime && _state != BossState.Dead)
+            {
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+            if (_state == BossState.Dead) yield break;
 
+            // Arrival check: use direct world distance on the XZ plane only.
+            // This is immune to NavMesh path-pending race conditions that
+            // make remainingDistance return 0 prematurely.
             yield return new WaitUntil(() =>
-                _state == BossState.Dead ||
-                (!_agent.pathPending && _agent.remainingDistance <= _agent.stoppingDistance + 0.1f));
+            {
+                if (_state == BossState.Dead) return true;
+                Vector3 flat      = new Vector3(transform.position.x, 0f, transform.position.z);
+                Vector3 flatDest  = new Vector3(dest.x,               0f, dest.z);
+                return Vector3.Distance(flat, flatDest) <= patrolArrivalRadius;
+            });
 
             if (_state == BossState.Dead) yield break;
 
@@ -277,6 +284,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
             _agent.isStopped = true;
             bossAnimator?.SetBool("isWalking", false);
 
+            // Stand still, shoot/throw, face player for timeAtPoint seconds.
             float timer = 0f;
             while (timer < timeAtPoint && _state != BossState.Dead)
             {
@@ -289,10 +297,8 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
 
             if (_state == BossState.Dead) yield break;
 
-            // FIX 3: advance index at the END of the wait, after the boss
-            // has actually stood still for timeAtPoint seconds.
-            _currentPatrolIndex = (_currentPatrolIndex + 1) % patrolPoints.Length;
             bossAnimator?.SetBool("isWalking", true);
+            // Index will be advanced at the top of the next loop iteration.
         }
     }
 
@@ -525,7 +531,7 @@ public class BossAI : MonoBehaviour, IDamageable, IResettable
         }
 
         transform.rotation = _spawnRot;
-        _agent.isStopped   = true;   // keep stopped until fight re-triggers
+        _agent.isStopped   = true;
 
         foreach (var part in parts) part.ResetPart();
 
